@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-8">
+    <div class="mb-4">
+      <h1 class="h3">Dashboard</h1>
+      <p class="text-muted">Welcome {{ user.full_name or user.email }}.</p>
+    </div>
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Getting Started</h5>
+        <p class="card-text small">You're logged in. Extend this dashboard with app features.</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Users</span>
+      </div>
+      <ul class="list-group list-group-flush" id="user-list">
+        {% if other_users %}
+          {% for u in other_users %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <span>{{ u.full_name or u.email }}</span>
+              <a class="btn btn-sm btn-outline-primary" href="/chat/{{ u.id }}">Chat</a>
+            </li>
+          {% endfor %}
+        {% else %}
+          <li class="list-group-item small text-muted">No other users yet.</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
