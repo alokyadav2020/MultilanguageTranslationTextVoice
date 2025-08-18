@@ -53,41 +53,22 @@ class TranslationService:
         else:
             logger.info("🖥️  Translation service: Using CPU")
         
-        # Language mappings for Helsinki-NLP models
-        # Only including models that actually exist
+        # ONLY tc-big models - these are the only models we use
         self.model_mappings = {
-            "en-fr": "Helsinki-NLP/opus-mt-en-fr",
-            "fr-en": "Helsinki-NLP/opus-mt-fr-en", 
-            "en-ar": "Helsinki-NLP/opus-mt-en-ar",
-            "fr-ar": "Helsinki-NLP/opus-mt-fr-ar"
+            ("en", "fr"): "Helsinki-NLP/opus-mt-tc-big-en-fr",
+            ("fr", "en"): "Helsinki-NLP/opus-mt-tc-big-fr-en",
+            ("en", "ar"): "Helsinki-NLP/opus-mt-tc-big-en-ar",
+            ("ar", "en"): "Helsinki-NLP/opus-mt-tc-big-ar-en",
         }
         
-        # Alternative Arabic models that might exist
-        self.arabic_models = {
-            # Try different model architectures for Arabic
-            "ar-en": [
-                "Helsinki-NLP/opus-mt-ar-en",
-                "facebook/mbart-large-50-many-to-many-mmt",  # Multilingual model
-                "google/mt5-base"  # Multilingual T5 model
-            ]
-        }
-        
-        # Supported languages
-        self.supported_languages = ["en", "fr", "ar"]
-        
-        # Translation capabilities matrix - all combinations supported via direct or indirect routes
-        self.translation_capabilities = {
-            "en": {"fr": True, "ar": True},      # English to French/Arabic works directly
-            "fr": {"en": True, "ar": True},      # French to English/Arabic works directly
-            "ar": {"en": True, "fr": True}       # Arabic to others works via two-step translation
-        }
+        self.supported_languages = {"en", "fr", "ar"}
         
         # Ensure cache directory exists
         os.makedirs(self.cache_dir, exist_ok=True)
         
-        logger.info(f"Translation service initialized with cache directory: {self.cache_dir}")
-        logger.info("Available translations: EN<->FR, EN->AR, FR->AR")
-        logger.warning("Arabic-to-other translations not available (no Helsinki-NLP models exist)")
+        if self.essential_logging:
+            logger.info(f"Translation service initialized with cache directory: {self.cache_dir}")
+            logger.info("Available translations: EN↔FR, EN↔AR (tc-big models only)")
     
     def _get_model_key(self, source_lang: str, target_lang: str) -> str:
         """Generate model key for language pair."""
@@ -95,9 +76,8 @@ class TranslationService:
     
     def _load_model(self, source_lang: str, target_lang: str) -> bool:
         """
-        Load translation model for specified language pair.
+        Load tc-big translation model for specified language pair.
         Downloads and caches model locally if not already available.
-        Tries alternative models if primary model fails.
         """
         model_key = self._get_model_key(source_lang, target_lang)
         
@@ -105,24 +85,15 @@ class TranslationService:
         if model_key in self.models and model_key in self.tokenizers:
             return True
         
-        # Get model name from mappings
-        if model_key not in self.model_mappings:
-            logger.error(f"No model mapping found for {source_lang} -> {target_lang}")
+        # Get tc-big model name from mappings
+        model_name = self.model_mappings.get((source_lang, target_lang))
+        if not model_name:
+            if self.essential_logging:
+                logger.warning(f"❌ No tc-big model available for {source_lang} → {target_lang}")
             return False
         
-        # Try primary model first
-        if self._try_load_model_variant(model_key, self.model_mappings[model_key]):
-            return True
-        
-        # Try alternative models if available
-        if model_key in self.alternative_mappings:
-            for alt_model in self.alternative_mappings[model_key]:
-                logger.info(f"Trying alternative model {alt_model} for {model_key}")
-                if self._try_load_model_variant(model_key, alt_model):
-                    return True
-        
-        logger.error(f"All model loading attempts failed for {model_key}")
-        return False
+        # Load the tc-big model
+        return self._try_load_model_variant(model_key, model_name)
     
     def _try_load_model_variant(self, model_key: str, model_name: str) -> bool:
         """Try to load a specific model variant."""
@@ -203,50 +174,27 @@ class TranslationService:
             self.translation_stats["successful_translations"] += 1
             return text
         
-        # Handle Arabic translations
-        if source_lang == "ar":
-            self.translation_stats["arabic_translations"] += 1
-            result = self._translate_from_arabic(text, target_lang)
+        # Use only direct tc-big models - no fallbacks
+        if self._load_model(source_lang, target_lang):
+            result = self._translate_direct(text, source_lang, target_lang)
             if result and result != text:
                 self.translation_stats["successful_translations"] += 1
+                if source_lang == "ar" or target_lang == "ar":
+                    self.translation_stats["arabic_translations"] += 1
                 if self.verbose_logging:
-                    logger.info(f"✅ Arabic translation successful: {source_lang} -> {target_lang}")
-            else:
-                self.translation_stats["failed_translations"] += 1
-                if self.essential_logging:
-                    logger.warning(f"⚠️  Arabic translation fallback: {source_lang} -> {target_lang}")
-            return result
-        elif target_lang == "ar":
-            self.translation_stats["arabic_translations"] += 1
-            result = self._translate_to_arabic(text, source_lang)
-            if result and result != text:
-                self.translation_stats["successful_translations"] += 1
-                if self.verbose_logging:
-                    logger.info(f"✅ Translation to Arabic successful: {source_lang} -> {target_lang}")
-            else:
-                self.translation_stats["failed_translations"] += 1
-                if self.essential_logging:
-                    logger.warning(f"⚠️  Translation to Arabic fallback: {source_lang} -> {target_lang}")
-            return result
-        else:
-            # Direct translation for non-Arabic pairs (en<->fr)
-            if self._load_model(source_lang, target_lang):
-                result = self._translate_direct(text, source_lang, target_lang)
-                if result and result != text:
-                    self.translation_stats["successful_translations"] += 1
-                    if self.verbose_logging:
-                        logger.info(f"✅ Direct translation successful: {source_lang} -> {target_lang}")
-                else:
-                    self.translation_stats["failed_translations"] += 1
-                    if self.essential_logging:
-                        logger.warning(f"⚠️  Direct translation failed: {source_lang} -> {target_lang}")
+                    logger.info(f"✅ tc-big translation successful: {source_lang} → {target_lang}")
                 return result
-        
-        # Fallback case
-        self.translation_stats["failed_translations"] += 1
-        if self.essential_logging:
-            logger.warning(f"❌ Translation failed, returning original: {source_lang} -> {target_lang}")
-        return text  # Return original text as fallback
+            else:
+                self.translation_stats["failed_translations"] += 1
+                if self.essential_logging:
+                    logger.warning(f"⚠️  tc-big translation failed: {source_lang} → {target_lang}")
+                return None
+        else:
+            # No tc-big model available for this language pair
+            self.translation_stats["failed_translations"] += 1
+            if self.essential_logging:
+                logger.warning(f"❌ No tc-big model available: {source_lang} → {target_lang}")
+            return None
     
     async def translate_text_async(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
         """
@@ -314,7 +262,7 @@ class TranslationService:
         
         return result
     
-    def _translate_from_arabic(self, text: str, target_lang: str) -> Optional[str]:
+    def _translate_direct(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
         """
         Translate from Arabic to other languages using alternative approach (optimized).
         """
