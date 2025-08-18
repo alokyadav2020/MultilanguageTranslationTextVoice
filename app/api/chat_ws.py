@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, R
 from sqlalchemy.orm import Session
 from datetime import datetime
 import json
+import asyncio
 from ..core.database import get_db
 from ..core.security import decode_access_token
 from ..models.user import User
@@ -72,6 +73,39 @@ def chat_history(
     ]
 
 
+@router.get("/api/chat/online-users/global")
+async def get_global_online_users(
+    request: Request,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get list of all currently online users."""
+    # Allow token via query or Authorization header
+    if not token:
+        auth = request.headers.get("Authorization")
+        if auth and auth.lower().startswith("bearer "):
+            token = auth.split(" ", 1)[1]
+    if not token:
+        print("DEBUG: No token provided")
+        raise HTTPException(status_code=401, detail="Missing token")
+    me = get_user_from_token(token, db)
+    if not me:
+        print("DEBUG: Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    # Get online users from presence manager
+    from ..services.presence_manager import presence_manager
+    
+    # Update this user's activity since they're making an API call
+    await presence_manager.update_user_general_activity(me.id, "api_call")
+    
+    online_user_ids = list(presence_manager.get_online_users())
+    
+    print(f"DEBUG: Online users API called by user {me.id}, found {len(online_user_ids)} online users: {online_user_ids}")
+    
+    return {"online_users": online_user_ids}
+
+
 @router.websocket("/ws/chat/{other_user_id}")
 async def chat_ws(
     websocket: WebSocket,
@@ -120,18 +154,39 @@ async def chat_ws(
         "timestamp": datetime.utcnow().isoformat(),
     }
     await chat_manager.broadcast(room_id, join_payload)
+    
+    # Register connection with presence manager
+    from ..services.presence_manager import presence_manager
+    connection_id = f"{me.id}_{room_id}_{id(websocket)}"
+    await presence_manager.add_chat_connection(
+        connection_id, websocket, me.id, str(room_id), me.id, other.id
+    )
+    
     try:
         while True:
-            # Receive message data (could be JSON with language info)
+            # Receive message data (could be JSON with message type info)
             raw_data = await websocket.receive_text()
             
-            # Try to parse as JSON for language info, fallback to plain text
+            # Update user activity in presence manager
+            await presence_manager.update_user_activity(connection_id)
+            
+            # Try to parse as JSON for message type and language info
             try:
                 data = json.loads(raw_data)
+                message_type = data.get("type", "message")
+                
+                # Handle typing indicators
+                if message_type == "typing":
+                    is_typing = data.get("typing", False)
+                    await presence_manager.set_user_typing(me.id, str(room_id), is_typing)
+                    continue  # Don't process typing as a regular message
+                
+                # Handle regular messages
                 text = data.get("text", raw_data)
                 source_lang = data.get("language", "en")  # Default to English
                 auto_translate = data.get("auto_translate", True)
             except (json.JSONDecodeError, AttributeError):
+                # Fallback for plain text messages
                 text = raw_data
                 source_lang = "en"
                 auto_translate = True
@@ -143,11 +198,28 @@ async def chat_ws(
                     # Get available target languages
                     target_languages = translation_service.get_available_translations(source_lang)
                     
-                    # Generate translations for each target language
-                    for target_lang in target_languages:
-                        translated_text = translation_service.translate_text(text, source_lang, target_lang)
-                        if translated_text:
-                            translations_cache[target_lang] = translated_text
+                    # Generate translations for each target language asynchronously
+                    if target_languages:
+                        translated_texts = await translation_service.translate_batch_async(
+                            [text] * len(target_languages), 
+                            source_lang, 
+                            target_languages[0]  # This will be improved with a proper batch API
+                        )
+                        
+                        # Create async tasks for all target languages
+                        translation_tasks = []
+                        for target_lang in target_languages:
+                            task = translation_service.translate_text_async(text, source_lang, target_lang)
+                            translation_tasks.append((target_lang, task))
+                        
+                        # Execute all translations in parallel
+                        if translation_tasks:
+                            results = await asyncio.gather(*[task for _, task in translation_tasks], return_exceptions=True)
+                            
+                            for i, (target_lang, _) in enumerate(translation_tasks):
+                                result = results[i]
+                                if not isinstance(result, Exception) and result:
+                                    translations_cache[target_lang] = result
                 except Exception as e:
                     print(f"Translation error: {e}")
                     # Continue without translations if service fails
@@ -177,6 +249,9 @@ async def chat_ws(
             }
             await chat_manager.broadcast(room_id, payload)
     except WebSocketDisconnect:
+        # Remove connection from presence manager
+        await presence_manager.remove_chat_connection(connection_id)
+        
         leave_payload = {
             "system": True,
             "event": "leave",

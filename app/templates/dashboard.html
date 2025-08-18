@@ -22,7 +22,12 @@
         {% if other_users %}
           {% for u in other_users %}
             <li class="list-group-item d-flex justify-content-between align-items-center">
-              <span>{{ u.full_name or u.email }}</span>
+              <div>
+                <span>{{ u.full_name or u.email }}</span>
+                <small id="status-{{ u.id }}" class="badge bg-secondary small ms-2">
+                  <i class="fas fa-circle me-1"></i>Checking...
+                </small>
+              </div>
               <a class="btn btn-sm btn-outline-primary" href="/chat/{{ u.id }}">Chat</a>
             </li>
           {% endfor %}
@@ -33,4 +38,77 @@
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const token = '{{ token }}';
+    console.log('Dashboard loaded, token:', token ? 'present' : 'missing');
+    
+    // Get list of user IDs for status tracking
+    const userIds = [
+      {% if other_users %}
+        {% for u in other_users %}{{ u.id }}{% if not loop.last %},{% endif %}{% endfor %}
+      {% endif %}
+    ];
+    console.log('User IDs to track:', userIds);
+    
+    function updateOnlineStatus() {
+        console.log('updateOnlineStatus called');
+        if (userIds.length === 0) {
+            console.log('No user IDs to track');
+            return;
+        }
+        if (!token) {
+            console.log('No token available');
+            return;
+        }
+        
+        console.log('Fetching online status...');
+        // Use a more efficient approach - only check every 30 seconds
+        fetch('/api/chat/online-users/global', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        })
+        .then(r => {
+            console.log('Response status:', r.status);
+            return r.ok ? r.json() : { online_users: [] };
+        })
+        .then(data => {
+            console.log('Online status data:', data);
+            userIds.forEach(userId => {
+                const statusElement = document.getElementById('status-' + userId);
+                if (statusElement) {
+                    const isOnline = data.online_users.includes(userId);
+                    console.log(`User ${userId} is ${isOnline ? 'online' : 'offline'}`);
+                    
+                    if (isOnline) {
+                        statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Online';
+                        statusElement.className = 'badge bg-success small ms-2';
+                    } else {
+                        statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Offline';
+                        statusElement.className = 'badge bg-secondary small ms-2';
+                    }
+                }
+            });
+        })
+        .catch(err => {
+            console.error('Error fetching online status:', err);
+            // Show offline status on error
+            userIds.forEach(userId => {
+                const statusElement = document.getElementById('status-' + userId);
+                if (statusElement) {
+                    statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Offline';
+                    statusElement.className = 'badge bg-secondary small ms-2';
+                }
+            });
+        });
+    }
+    
+    // Update status on page load only (WebSocket handles real-time updates)
+    // Cache buster: v2.1 - Removed setInterval polling for performance optimization
+    console.log('Loading initial online status...');
+    updateOnlineStatus(); // Only call once on page load
+    // Removed setInterval - WebSocket connections handle real-time updates
+});
+</script>
+
 {% endblock %}

@@ -49,6 +49,21 @@ app.include_router(users.router)
 app.include_router(chat_ws.router)
 app.include_router(translation.router)
 
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services and preload models for better performance."""
+    from .services.translation import translation_service
+    
+    logger.info("🚀 Starting translation service optimization...")
+    
+    # Preload common translation models in background
+    import asyncio
+    asyncio.create_task(asyncio.to_thread(translation_service.preload_models))
+    
+    logger.info("✅ Translation service startup complete")
+
+
 @app.get("/_debug/session")
 def debug_session(request: Request):
     return {"session": dict(request.session)}
@@ -69,13 +84,20 @@ def get_current_ui_user(request: Request, db: Session = Depends(get_db)) -> User
         payload = decode_access_token(token)
     except Exception as e:
         logger.debug("Token decode failed: %s", e)
+        # Clear invalid session
+        request.session.clear()
         return None
     if not payload or "sub" not in payload:
         logger.debug("Invalid payload or missing sub")
+        # Clear invalid session
+        request.session.clear()
         return None
     user = db.query(User).filter(User.email == payload["sub"]).first()
     if not user:
         logger.debug("User not found for sub: %s", payload.get("sub"))
+        # Clear session for non-existent user
+        request.session.clear()
+        return None
     else:
         logger.debug("Found user: %s", user.email)
     return user
@@ -90,15 +112,21 @@ async def chat_page(
 ):
     # Must be logged in
     if not current_user:
-        return RedirectResponse("/login", 302)
+        response = RedirectResponse("/login", 302)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
     # Disallow chatting with self (redirect to dashboard)
     if other_user_id == current_user.id:
-        return RedirectResponse("/", 302)
+        response = RedirectResponse("/", 302)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
     remote_user = db.query(User).filter(User.id == other_user_id).first()
     if not remote_user:
-        return RedirectResponse("/", 302)
+        response = RedirectResponse("/", 302)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
     token = request.session.get("token")
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "chat.html",
         {
             "request": request,
@@ -109,22 +137,45 @@ async def chat_page(
             "title": f"Chat with {remote_user.full_name or remote_user.email}",
         },
     )
+    # Add cache control headers for authenticated content
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, user: User | None = Depends(get_current_ui_user), db: Session = Depends(get_db)):
     if user:
+        # Track user dashboard activity
+        from .services.presence_manager import presence_manager
+        await presence_manager.update_user_general_activity(user.id, "dashboard")
+        
+        # Get the token from session for dashboard API calls
+        token = request.session.get("token")
         other_users = db.query(User).filter(User.id != user.id).all()
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
                 "user": user,
                 "title": "Dashboard",
                 "other_users": other_users,
+                "token": token,  # Add token for API calls
             },
         )
-    return RedirectResponse(url="/login", status_code=302)
+        # Add cache control headers for authenticated content
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    
+    # Create redirect response with cache control
+    response = RedirectResponse(url="/login", status_code=302)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -183,6 +234,43 @@ async def login_submit(request: Request, username: str = Form(...), password: st
 
 @app.get("/logout")
 async def logout(request: Request):
-    request.session.pop("token", None)
-    request.session.setdefault("flash", []).append(("info", "Logged out"))
-    return RedirectResponse(url="/login", status_code=303)
+    # Get current user before clearing session
+    current_user = None
+    token = request.session.get("token")
+    if token:
+        try:
+            from .core.security import decode_access_token
+            from .core.database import get_db
+            from .models.user import User
+            payload = decode_access_token(token)
+            if payload and "sub" in payload:
+                # Get database session
+                db = next(get_db())
+                current_user = db.query(User).filter(User.email == payload["sub"]).first()
+                db.close()
+        except Exception:
+            pass  # Ignore errors, just proceed with logout
+    
+    # Clear user from presence manager if found
+    if current_user:
+        try:
+            from .services.presence_manager import presence_manager
+            # Remove user from all presence tracking
+            await presence_manager.remove_user_from_presence(current_user.id)
+        except Exception:
+            pass  # Ignore errors, just proceed with logout
+    
+    # Clear all session data
+    request.session.clear()
+    # Add logout message to new clean session
+    request.session.setdefault("flash", []).append(("info", "Logged out successfully"))
+    
+    # Create response with proper cache control headers
+    response = RedirectResponse(url="/login", status_code=303)
+    
+    # Add headers to prevent caching of authenticated content
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    
+    return response

@@ -4,12 +4,17 @@
   <div class="col-lg-8 mx-auto">
     <div class="card shadow-sm">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Chat with {{ remote_user.full_name or remote_user.email }}</strong>
+        <div class="d-flex align-items-center gap-2">
+          <strong>Chat with {{ remote_user.full_name or remote_user.email }}</strong>
+          <small id="user-status" class="badge bg-secondary">
+            <i class="fas fa-circle me-1"></i>Checking...
+          </small>
+        </div>
         <div class="d-flex align-items-center gap-2">
           <select id="language-select" class="form-select form-select-sm" style="width: auto;">
-            <option value="en">English</option>
-            <option value="fr">Français</option>
-            <option value="ar">العربية</option>
+            <option value="en" {{ 'selected' if current_user.preferred_language == 'en' else '' }}>English</option>
+            <option value="fr" {{ 'selected' if current_user.preferred_language == 'fr' else '' }}>Français</option>
+            <option value="ar" {{ 'selected' if current_user.preferred_language == 'ar' else '' }}>العربية</option>
           </select>
           <a class="btn btn-sm btn-outline-secondary" href="/">Back</a>
         </div>
@@ -18,9 +23,9 @@
         <div id="messages" class="flex-grow-1 overflow-auto p-3 small bg-light"></div>
         <form id="chat-form" class="border-top p-2 d-flex gap-2">
           <select id="input-language" class="form-select" style="width: 120px;">
-            <option value="en">EN</option>
-            <option value="fr">FR</option>
-            <option value="ar">AR</option>
+            <option value="en" {{ 'selected' if current_user.preferred_language == 'en' else '' }}>EN</option>
+            <option value="fr" {{ 'selected' if current_user.preferred_language == 'fr' else '' }}>FR</option>
+            <option value="ar" {{ 'selected' if current_user.preferred_language == 'ar' else '' }}>AR</option>
           </select>
           <input id="message-input" autocomplete="off" class="form-control" placeholder="Type a message" />
           <button class="btn btn-primary" type="submit">Send</button>
@@ -40,14 +45,44 @@
   const wsUrl = `${wsProtocol}://${location.host}/ws/chat/${otherUserId}?token=${encodeURIComponent(token)}`;
   const socket = new WebSocket(wsUrl);
   const box = document.getElementById('messages');
-  let userLanguage = 'en'; // Default user language preference
+  
+  // Initialize user language preference from the selected dropdown value
+  let userLanguage = document.getElementById('input-language').value || '{{ current_user.preferred_language }}' || 'en';
+  
+  let typingTimeout; // For typing indicator timing
+  let typingIndicatorElement; // Track typing indicator
+  let onlineStatusCheckInterval; // For periodic online status checks
 
-  // Language selection change handler
-  document.getElementById('language-select').addEventListener('change', function(e) {
-    userLanguage = e.target.value;
-    // Reload chat history with new language preference
-    loadChatHistory();
-  });
+  // Online status functions
+  function updateUserOnlineStatus(isOnline) {
+    const statusElement = document.getElementById('user-status');
+    if (statusElement) {
+      if (isOnline) {
+        statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Online';
+        statusElement.className = 'badge bg-success';
+      } else {
+        statusElement.innerHTML = '<i class="fas fa-circle me-1"></i>Offline';
+        statusElement.className = 'badge bg-secondary';
+      }
+    }
+  }
+
+  function checkOnlineStatus() {
+    if (!token) return;
+    
+    fetch('/api/chat/online-users/global', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(r => r.ok ? r.json() : { online_users: [] })
+    .then(data => {
+      const isOnline = data.online_users.includes(otherUserId);
+      updateUserOnlineStatus(isOnline);
+    })
+    .catch(() => {
+      // Show offline on error
+      updateUserOnlineStatus(false);
+    });
+  }
 
   function addSystem(text){
     const d=document.createElement('div');
@@ -70,7 +105,7 @@
     return { text: originalText, isTranslated: false };
   }
 
-  function addMessage(senderId, senderEmail, originalText, originalLang = 'en', translationsCache = {}){
+  function addMessage(senderId, senderEmail, originalText, originalLang = 'en', translationsCache = {}, timestamp = null){
     const mine = Number(senderId) === Number(currentUserId);
     const wrap=document.createElement('div');
     wrap.className='mb-1 d-flex '+(mine?'justify-content-end':'justify-content-start');
@@ -79,12 +114,33 @@
     bubble.style.maxWidth='70%';
     const label = mine ? 'You' : senderEmail;
     
+    // Format timestamp
+    let timeStr = '';
+    if (timestamp) {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      
+      if (isToday) {
+        // Show only time for today's messages
+        timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      } else {
+        // Show date and time for older messages
+        timeStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      }
+    }
+    
     // Get appropriate text to display
     const displayData = getDisplayText(originalText, originalLang, translationsCache);
     const displayText = displayData.text;
     
-    // Create message content
-    let messageContent = '<strong class="me-1">'+label+':</strong>'+displayText;
+    // Create message content with timestamp
+    let messageContent = '<div><strong class="me-1">'+label+':</strong>'+displayText;
+    
+    // Add timestamp
+    if (timeStr) {
+      messageContent += '<br><small class="text-muted opacity-75"><i class="fas fa-clock me-1"></i>' + timeStr + '</small>';
+    }
     
     // Add language indicator and original text if translated
     if (displayData.isTranslated) {
@@ -93,23 +149,96 @@
       messageContent += `<br><small class="text-muted opacity-75">${originalLang.toUpperCase()}</small>`;
     }
     
+    messageContent += '</div>';
+    
     bubble.innerHTML = messageContent;
     wrap.appendChild(bubble); box.appendChild(wrap); box.scrollTop=box.scrollHeight;
   }
 
-  socket.onopen=()=>addSystem('[Connected]');
-  socket.onclose=()=>addSystem('[Disconnected]');
+  function showTypingIndicator() {
+    // Remove existing typing indicator
+    hideTypingIndicator();
+    
+    // Create new typing indicator
+    typingIndicatorElement = document.createElement('div');
+    typingIndicatorElement.className = 'mb-1 d-flex justify-content-start';
+    typingIndicatorElement.id = 'typing-indicator';
+    
+    const bubble = document.createElement('div');
+    bubble.className = 'px-2 py-1 rounded bg-light border text-muted small';
+    bubble.style.maxWidth = '70%';
+    bubble.innerHTML = `<em>${otherUserName} is typing...</em>`;
+    
+    typingIndicatorElement.appendChild(bubble);
+    box.appendChild(typingIndicatorElement);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function hideTypingIndicator() {
+    if (typingIndicatorElement) {
+      typingIndicatorElement.remove();
+      typingIndicatorElement = null;
+    }
+  }
+
+  function sendTypingIndicator(isTyping) {
+    const typingData = {
+      type: "typing",
+      typing: isTyping
+    };
+    socket.send(JSON.stringify(typingData));
+  }
+
+  socket.onopen=()=>{
+    addSystem('[Connected]');
+    // Check online status when WebSocket connects
+    checkOnlineStatus();
+  };
+  socket.onclose=()=>{
+    addSystem('[Disconnected]');
+    // Show offline when WebSocket disconnects
+    updateUserOnlineStatus(false);
+  };
   socket.onmessage=(ev)=>{
     try {
       const data = JSON.parse(ev.data);
       if(data.system){ addSystem('['+data.event+'] '+(data.user.email || data.user.id)); return; }
+      
+      // Handle typing indicators
+      if(data.type === 'typing_update') {
+        const typingUsers = data.typing_user_ids || [];
+        const isOtherUserTyping = typingUsers.includes(otherUserId);
+        
+        if (isOtherUserTyping) {
+          showTypingIndicator();
+        } else {
+          hideTypingIndicator();
+        }
+        return;
+      }
+      
+      // Handle online status updates
+      if(data.type === 'online_users_update') {
+        // Update online status indicator in chat header
+        const onlineUsers = data.online_user_ids || [];
+        const isOtherUserOnline = onlineUsers.includes(otherUserId);
+        updateUserOnlineStatus(isOtherUserOnline);
+        return;
+      }
+      
+      // Handle regular messages
       if(!data.sender){ addSystem('[Missing sender]'); return; }
+      
+      // Hide typing indicator when message arrives
+      hideTypingIndicator();
+      
       addMessage(
         data.sender.id, 
         data.sender.name || data.sender.email, 
         data.original_text,
         data.original_language || 'en',
-        data.translations_cache || {}
+        data.translations_cache || {},
+        data.timestamp
       );
     } catch(err){ console.error('WS error', err, ev.data); addSystem('[Bad message]'); }
   };
@@ -144,7 +273,8 @@
           m.sender_id===currentUserId?currentUserName:otherUserName, 
           m.original_text,
           m.original_language || 'en',
-          m.translations_cache || {}
+          m.translations_cache || {},
+          m.timestamp
         )); 
       })
       .catch(()=>{});
@@ -152,6 +282,101 @@
 
   // Load initial chat history
   loadChatHistory();
+
+  // Add typing indicator functionality to message input
+  const messageInput = document.getElementById('message-input');
+  let isTyping = false;
+  
+  messageInput.addEventListener('input', function() {
+    if (!isTyping) {
+      isTyping = true;
+      sendTypingIndicator(true);
+    }
+    
+    // Clear previous timeout
+    clearTimeout(typingTimeout);
+    
+    // Stop typing after 2 seconds of inactivity
+    typingTimeout = setTimeout(() => {
+      isTyping = false;
+      sendTypingIndicator(false);
+    }, 2000);
+  });
+
+  messageInput.addEventListener('keydown', function(e) {
+    // Stop typing when user presses Enter to send message
+    if (e.key === 'Enter') {
+      clearTimeout(typingTimeout);
+      if (isTyping) {
+        isTyping = false;
+        sendTypingIndicator(false);
+      }
+    }
+  });
+
+  // Initialize online status checking (initial load only)
+  // Cache buster: v2.1 - Removed setInterval polling for performance optimization  
+  checkOnlineStatus(); // Check immediately on load
+  // Removed setInterval - WebSocket handles real-time online status updates
+  
+  // Note: onlineStatusCheckInterval variable kept for compatibility but not used
+
+  // Save user's language preference when changed (input language dropdown)
+  const languageSelect = document.getElementById('input-language');
+  languageSelect.addEventListener('change', function() {
+    const selectedLanguage = this.value;
+    
+    // Update current language for message display
+    userLanguage = selectedLanguage;
+    
+    // Reload chat history with new language preference
+    loadChatHistory();
+    
+    // Save preference to backend
+    fetch('/users/update-language', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ preferred_language: selectedLanguage })
+    }).catch(error => {
+      console.log('Language preference save failed:', error);
+      // Don't show error to user, just log it
+    });
+  });
+
+  // Save user's language preference when changed (display language dropdown)
+  const displayLanguageSelect = document.getElementById('language-select');
+  displayLanguageSelect.addEventListener('change', function() {
+    const selectedLanguage = this.value;
+    
+    // Update current language for message display
+    userLanguage = selectedLanguage;
+    
+    // Reload chat history with new language preference
+    loadChatHistory();
+    
+    // Save preference to backend
+    fetch('/users/update-language', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ preferred_language: selectedLanguage })
+    }).catch(error => {
+      console.log('Language preference save failed:', error);
+      // Don't show error to user, just log it
+    });
+  });
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', function() {
+    if (onlineStatusCheckInterval) {
+      clearInterval(onlineStatusCheckInterval);
+    }
+  });
 })();
 </script>
 {% endblock %}

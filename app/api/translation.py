@@ -48,7 +48,8 @@ async def translate_text(
         raise HTTPException(status_code=400, detail=f"Unsupported target language: {target_lang}")
     
     try:
-        translated_text = translation_service.translate_text(text, source_lang, target_lang)
+        # Use async translation for better performance
+        translated_text = await translation_service.translate_text_async(text, source_lang, target_lang)
         
         if translated_text is None:
             raise HTTPException(status_code=500, detail="Translation failed")
@@ -85,7 +86,32 @@ async def translate_to_multiple_languages(
             raise HTTPException(status_code=400, detail=f"Unsupported target language: {lang}")
     
     try:
-        translations = translation_service.translate_to_multiple_languages(text, source_lang, target_langs)
+        # Use async batch translation for better performance
+        async_tasks = []
+        import asyncio
+        
+        # Create async tasks for each target language
+        for target_lang in target_langs:
+            if target_lang != source_lang:  # Skip same language
+                task = translation_service.translate_text_async(text, source_lang, target_lang)
+                async_tasks.append((target_lang, task))
+        
+        # Execute all translations in parallel
+        translations = {}
+        if async_tasks:
+            results = await asyncio.gather(*[task for _, task in async_tasks], return_exceptions=True)
+            
+            for i, (target_lang, _) in enumerate(async_tasks):
+                result = results[i]
+                if isinstance(result, Exception):
+                    translations[target_lang] = text  # Fallback to original
+                else:
+                    translations[target_lang] = result if result else text
+        
+        # Include original text for same language
+        for target_lang in target_langs:
+            if target_lang == source_lang:
+                translations[target_lang] = text
         
         return {
             "original_text": text,
@@ -94,6 +120,40 @@ async def translate_to_multiple_languages(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Translation error: {str(e)}")
+
+
+@router.post("/translate/batch")
+async def translate_batch(
+    texts: List[str],
+    source_lang: str,
+    target_lang: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Translate multiple texts in a single batch for better performance.
+    """
+    if not texts or all(not text.strip() for text in texts):
+        raise HTTPException(status_code=400, detail="At least one text must be provided")
+    
+    if source_lang not in translation_service.supported_languages:
+        raise HTTPException(status_code=400, detail=f"Unsupported source language: {source_lang}")
+    
+    if target_lang not in translation_service.supported_languages:
+        raise HTTPException(status_code=400, detail=f"Unsupported target language: {target_lang}")
+    
+    try:
+        # Use async batch translation for maximum performance
+        translated_texts = await translation_service.translate_batch_async(texts, source_lang, target_lang)
+        
+        return {
+            "original_texts": texts,
+            "translated_texts": translated_texts,
+            "source_language": source_lang,
+            "target_language": target_lang,
+            "count": len(texts)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch translation error: {str(e)}")
 
 
 @router.get("/message/{message_id}")
@@ -168,6 +228,20 @@ async def get_translation_service_info(
         return info
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting service info: {str(e)}")
+
+
+@router.get("/stats")
+async def get_translation_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get translation service statistics and performance metrics.
+    """
+    try:
+        stats = translation_service.get_translation_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting translation stats: {str(e)}")
 
 
 @router.post("/preload")
