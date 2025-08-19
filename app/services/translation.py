@@ -80,9 +80,9 @@ class TranslationService:
         # Log device information (startup only)
         if torch.cuda.is_available():
             gpu_name = torch.cuda.get_device_name(0)
-            logger.info(f"🚀 Helsinki-NLP Translation service: CUDA GPU detected ({gpu_name})")
+            logger.info(f"🚀 Helsinki-NLP OPUS Translation service: CUDA GPU detected ({gpu_name})")
         else:
-            logger.info("🖥️  Helsinki-NLP Translation service: Using CPU")
+            logger.info("🖥️  Helsinki-NLP OPUS Translation service: Using CPU")
         
         # Language mappings
         self.supported_languages = {"en", "fr", "ar"}
@@ -93,7 +93,7 @@ class TranslationService:
             os.makedirs(config["local_path"], exist_ok=True)
         
         if self.essential_logging:
-            logger.info(f"Helsinki-NLP Translation service initialized")
+            logger.info("Helsinki-NLP OPUS Translation service initialized")
             logger.info(f"📂 Cache directory: {self.cache_dir}")
             logger.info(f"✅ Supporting language pairs: {list(self.model_mappings.keys())}")
 
@@ -519,16 +519,32 @@ class TranslationService:
         Preload common translation models for faster response times.
         """
         if self.essential_logging:
-            logger.info("🚀 Preloading Helsinki-NLP translation models...")
+            logger.info("🚀 Preloading Helsinki-NLP OPUS translation models...")
         
-        # Load all available models
+        loaded_count = 0
+        total_models = len(self.model_mappings)
+        
+        # Load all available models with error handling
         for (source_lang, target_lang) in self.model_mappings.keys():
-            if self.verbose_logging:
-                logger.info(f"📥 Preloading: {source_lang} -> {target_lang}")
-            self._load_model(source_lang, target_lang)
+            try:
+                if self.verbose_logging:
+                    logger.info(f"📥 Preloading: {source_lang} -> {target_lang}")
+                
+                if self._load_model(source_lang, target_lang):
+                    loaded_count += 1
+                    if self.essential_logging:
+                        logger.info(f"✅ Loaded {loaded_count}/{total_models}: {source_lang}→{target_lang}")
+                else:
+                    if self.essential_logging:
+                        logger.warning(f"⚠️  Failed to load {source_lang}→{target_lang}")
+                        
+            except Exception as e:
+                if self.essential_logging:
+                    logger.error(f"❌ Error preloading {source_lang}→{target_lang}: {e}")
+                continue
         
         if self.essential_logging:
-            logger.info("✅ Helsinki-NLP models preloaded")
+            logger.info(f"✅ Helsinki-NLP OPUS models preloaded: {loaded_count}/{total_models} successful")
 
     def download_model_if_needed(self, source_lang: str, target_lang: str) -> bool:
         """

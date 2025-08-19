@@ -57,9 +57,19 @@ async def startup_event():
     
     logger.info("🚀 Starting translation service optimization...")
     
-    # Preload common translation models in background
+    # Preload common translation models in background (non-blocking)
     import asyncio
-    asyncio.create_task(asyncio.to_thread(translation_service.preload_models))
+    
+    def preload_in_background():
+        """Run preload in background thread to avoid blocking startup"""
+        try:
+            translation_service.preload_models()
+            logger.info("🎯 Background model preloading completed")
+        except Exception as e:
+            logger.error(f"❌ Background preloading failed: {e}")
+    
+    # Start preloading in background thread - don't wait for completion
+    asyncio.create_task(asyncio.to_thread(preload_in_background))
     
     logger.info("✅ Translation service startup complete")
 
