@@ -60,17 +60,17 @@ async def startup_event():
     # Preload common translation models in background (non-blocking)
     import threading
     
-    def preload_in_background():
-        """Run preload in background thread to avoid blocking startup"""
-        try:
-            translation_service.preload_models()
-            logger.info("🎯 Background model preloading completed")
-        except Exception as e:
-            logger.error(f"❌ Background preloading failed: {e}")
+    # def preload_in_background():
+    #     """Run preload in background thread to avoid blocking startup"""
+    #     try:
+    #         translation_service.preload_models()
+    #         logger.info("🎯 Background model preloading completed")
+    #     except Exception as e:
+    #         logger.error(f"❌ Background preloading failed: {e}")
     
-    # Start preloading in background thread using threading instead of asyncio.to_thread
-    thread = threading.Thread(target=preload_in_background, daemon=True)
-    thread.start()
+    # # Start preloading in background thread using threading instead of asyncio.to_thread
+    # thread = threading.Thread(target=preload_in_background, daemon=True)
+    # thread.start()
     
     logger.info("✅ Translation service startup complete")
 
