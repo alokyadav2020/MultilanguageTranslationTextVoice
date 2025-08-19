@@ -78,59 +78,87 @@ class TranslationService:
             logger.info("✅ Single M2M100 model supports all language pairs: EN↔FR↔AR")
     
     def _load_m2m100_model(self):
-        """Load the M2M100 model and tokenizer."""
+        """Load the M2M100 model with proper error handling for security and compatibility."""
         try:
-            if self.verbose_logging:
-                logger.info(f"📂 Loading M2M100 model: {self.model_name}")
+            if self.essential_logging:
+                logger.info(f"� Loading M2M100 model: {self.model_name}")
+                logger.info(f"📂 Cache directory: {self.cache_dir}")
             
-            # Try to load from local cache first
-            if os.path.exists(self.model_cache_path) and os.path.isdir(self.model_cache_path):
-                try:
-                    if self.verbose_logging:
-                        logger.info(f"📁 Loading M2M100 from cache: {self.model_cache_path}")
-                    
-                    self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_cache_path)
-                    self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_cache_path)
-                    
-                    if self.verbose_logging:
-                        logger.info("✅ M2M100 model loaded from cache")
-                    
-                except Exception as e:
-                    if self.verbose_logging:
-                        logger.warning(f"⚠️  Failed to load M2M100 from cache: {e}")
-                    # Fall back to downloading
-                    self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name, cache_dir=self.cache_dir)
-                    self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name, cache_dir=self.cache_dir)
-                    
-                    # Save to our custom cache location
-                    self.tokenizer.save_pretrained(self.model_cache_path)
-                    self.model.save_pretrained(self.model_cache_path)
-                    
-                    if self.verbose_logging:
-                        logger.info("✅ M2M100 model downloaded and cached")
+            # Check if model is already cached locally
+            model_cache_path = os.path.join(self.cache_dir, "models--facebook--m2m100_418M")
+            if os.path.exists(model_cache_path):
+                if self.essential_logging:
+                    logger.info("� Loading from local cache...")
+                
+                # Load from local cache with safetensors preference
+                self.tokenizer = M2M100Tokenizer.from_pretrained(
+                    model_cache_path,
+                    local_files_only=True,
+                    use_safetensors=True  # Prefer safetensors format
+                )
+                self.model = M2M100ForConditionalGeneration.from_pretrained(
+                    model_cache_path,
+                    local_files_only=True,
+                    use_safetensors=True,  # Prefer safetensors format
+                    torch_dtype=torch.float16 if self.device.type == 'cuda' else torch.float32
+                )
             else:
-                # Download and cache the model
-                if self.verbose_logging:
-                    logger.info("📥 Downloading M2M100 model...")
+                if self.essential_logging:
+                    logger.info("📥 Downloading model from Hugging Face...")
                 
-                self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name, cache_dir=self.cache_dir)
-                self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name, cache_dir=self.cache_dir)
-                
-                # Save to our custom cache location
-                self.tokenizer.save_pretrained(self.model_cache_path)
-                self.model.save_pretrained(self.model_cache_path)
-                
-                if self.verbose_logging:
-                    logger.info("✅ M2M100 model downloaded and cached")
+                # Download with safetensors preference
+                self.tokenizer = M2M100Tokenizer.from_pretrained(
+                    self.model_name,
+                    cache_dir=self.cache_dir,
+                    use_safetensors=True
+                )
+                self.model = M2M100ForConditionalGeneration.from_pretrained(
+                    self.model_name,
+                    cache_dir=self.cache_dir,
+                    use_safetensors=True,  # Use safe tensor format
+                    torch_dtype=torch.float16 if self.device.type == 'cuda' else torch.float32
+                )
             
-            # Move model to appropriate device (GPU if available)
+            # Move model to device
             self.model.to(self.device)
+            self.model.eval()  # Set to evaluation mode
+            
+            # Store the actual cache path for future use
+            self.model_cache_path = model_cache_path if os.path.exists(model_cache_path) else os.path.join(self.cache_dir, "models--facebook--m2m100_418M")
             
             if self.essential_logging:
-                logger.info(f"🤖 M2M100 model loaded on {self.device}")
-                
+                logger.info(f"✅ M2M100 model loaded successfully on {self.device}")
+                logger.info(f"📊 Model parameters: ~418M")
+                logger.info(f"💾 Memory usage: ~1.9GB")
+            
+        except ImportError as e:
+            if "protobuf" in str(e).lower():
+                logger.error("❌ Protobuf library missing! Install with: pip install protobuf>=4.25.0")
+                logger.error("   This is required for M2M100 tokenizer to work.")
+            else:
+                logger.error(f"❌ Import error: {str(e)}")
+            self.model = None
+            self.tokenizer = None
+            raise
+            
+        except ValueError as e:
+            if "torch.load" in str(e) and "v2.6" in str(e):
+                logger.error("❌ PyTorch version too old! Upgrade with: pip install torch>=2.6.0")
+                logger.error("   This fixes a critical security vulnerability (CVE-2025-32434)")
+                logger.error("   Alternatively, the model will try to use safetensors format automatically.")
+            else:
+                logger.error(f"❌ Value error loading model: {str(e)}")
+            self.model = None
+            self.tokenizer = None
+            raise
+            
         except Exception as e:
-            logger.error(f"❌ Failed to load M2M100 model: {e}")
+            logger.error(f"❌ Failed to load M2M100 model: {str(e)}")
+            logger.error("   Possible solutions:")
+            logger.error("   1. Upgrade PyTorch: pip install torch>=2.6.0")
+            logger.error("   2. Install protobuf: pip install protobuf>=4.25.0")
+            logger.error("   3. Clear cache: rm -rf ~/.cache/huggingface/")
+            logger.error("   4. Check internet connection for model download")
             self.model = None
             self.tokenizer = None
             raise
@@ -419,50 +447,13 @@ class TranslationService:
             return results
 
     def get_statistics(self) -> dict:
-        for text in texts:
-            if source_lang == "ar":
-                pattern_result = self._pattern_based_arabic_translation(text, target_lang)
-                if pattern_result and pattern_result != text:
-                    pattern_results.append(pattern_result)
-                else:
-                    pattern_results.append(None)  # Needs mBART translation
-            else:
-                pattern_results.append(None)  # Direct translation to Arabic
+        """
+        Get translation service statistics.
         
-        # Collect texts that need mBART translation
-        mbart_texts = []
-        mbart_indices = []
-        for i, (text, pattern_result) in enumerate(zip(texts, pattern_results)):
-            if pattern_result is None:
-                mbart_texts.append(text)
-                mbart_indices.append(i)
-        
-        # Batch translate with mBART if needed
-        mbart_results = {}
-        if mbart_texts:
-            try:
-                # Try to use mBART model for batch translation
-                for i, text in enumerate(mbart_texts):
-                    mbart_result = self._try_mbart_translation(text, source_lang, target_lang)
-                    mbart_results[mbart_indices[i]] = mbart_result if mbart_result else text
-            except Exception as e:
-                if self.verbose_logging:
-                    logger.error(f"Batch mBART translation failed: {str(e)}")
-                # Fallback to original texts
-                for idx in mbart_indices:
-                    mbart_results[idx] = texts[idx]
-        
-        # Combine results
-        final_results = []
-        for i, (text, pattern_result) in enumerate(zip(texts, pattern_results)):
-            if pattern_result is not None:
-                final_results.append(pattern_result)
-            elif i in mbart_results:
-                final_results.append(mbart_results[i])
-            else:
-                final_results.append(text)  # Fallback
-        
-        return final_results
+        Returns:
+            Dictionary containing translation statistics
+        """
+        return self.translation_stats.copy()
     
     def translate_to_multiple_languages(self, text: str, source_lang: str, target_langs: list) -> Dict[str, str]:
         """

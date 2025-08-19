@@ -1,113 +1,259 @@
-accelerate==1.10.0
-annotated-types==0.7.0
-anyio==4.10.0
-asttokens==3.0.0
-attrs==25.3.0
-backcall==0.2.0
-bcrypt==4.3.0
-beautifulsoup4==4.13.4
-bleach==6.2.0
-certifi==2025.8.3
-cffi==1.17.1
-charset-normalizer==3.4.3
-click==8.2.1
-colorama==0.4.6
-cryptography==45.0.6
-decorator==5.2.1
-defusedxml==0.7.1
-dnspython==2.7.0
-docopt==0.6.2
-ecdsa==0.19.1
-email_validator==2.1.1
-executing==2.2.0
-fastapi==0.111.0
-fastapi-cli==0.0.8
-fastjsonschema==2.21.2
-filelock==3.18.0
-fsspec==2025.7.0
-greenlet==3.2.4
-h11==0.16.0
-httpcore==1.0.9
-httptools==0.6.4
-httpx==0.28.1
-huggingface-hub==0.34.4
-idna==3.10
-ipython==8.12.3
-itsdangerous==2.2.0
-jedi==0.19.2
-Jinja2==3.1.4
-jsonschema==4.25.0
-jsonschema-specifications==2025.4.1
-jupyter_client==8.6.3
-jupyter_core==5.8.1
-jupyterlab_pygments==0.3.0
-markdown-it-py==4.0.0
-MarkupSafe==3.0.2
-matplotlib-inline==0.1.7
-mdurl==0.1.2
-mistune==3.1.3
-mpmath==1.3.0
-nbclient==0.10.2
-nbconvert==7.16.6
-nbformat==5.10.4
-networkx==3.5
-numpy==2.3.2
-orjson==3.11.2
-packaging==25.0
-pandocfilters==1.5.1
-parso==0.8.4
-passlib==1.7.4
-pickleshare==0.7.5
-pipreqs==0.5.0
-platformdirs==4.3.8
-prompt_toolkit==3.0.51
-psutil==7.0.0
-pure_eval==0.2.3
-pyasn1==0.6.1
-pycparser==2.22
-pydantic==2.7.1
-pydantic-settings==2.2.1
-pydantic_core==2.18.2
-Pygments==2.19.2
-python-dateutil==2.9.0.post0
-python-dotenv==1.1.1
-python-jose==3.3.0
-python-multipart==0.0.9
-pywin32==311
-PyYAML==6.0.2
-pyzmq==27.0.1
-referencing==0.36.2
-regex==2025.7.34
-requests==2.32.4
-rich==14.1.0
-rich-toolkit==0.15.0
-rpds-py==0.27.0
-rsa==4.9.1
-safetensors==0.6.2
-sentencepiece==0.2.1
-setuptools==80.9.0
-shellingham==1.5.4
-six==1.17.0
-sniffio==1.3.1
-soupsieve==2.7
-SQLAlchemy==2.0.30
-stack-data==0.6.3
-starlette==0.37.2
-sympy==1.14.0
-tinycss2==1.4.0
-tokenizers==0.21.4
-torch==2.8.0
-tornado==6.5.2
-tqdm==4.67.1
-traitlets==5.14.3
-transformers==4.55.1
-typer==0.16.0
-typing_extensions==4.14.1
-ujson==5.10.0
-urllib3==2.5.0
-uvicorn==0.30.1
-watchfiles==1.1.0
-wcwidth==0.2.13
-webencodings==0.5.1
-websockets==15.0.1
-yarg==0.1.9
+# =============================================================================
+# Multilingual Translation & Chat Application - Linux Requirements
+# Optimized for production deployment on Linux/Nvidia Jetson systems
+# =============================================================================
+
+# Core Python version compatibility: Python 3.8+
+# Recommended: Python 3.10 or 3.11 for optimal performance
+
+# =============================================================================
+# WEB FRAMEWORK & ASGI SERVER
+# =============================================================================
+fastapi==0.111.0                    # Modern, fast web framework with automatic API docs
+fastapi-cli==0.0.8                  # CLI tools for FastAPI development
+uvicorn[standard]==0.30.1           # Lightning-fast ASGI server with auto-reload
+starlette==0.37.2                   # Lightweight ASGI framework/toolkit
+httptools==0.6.4                    # Fast HTTP parser (Linux-optimized)
+uvloop>=0.19.0                      # Ultra fast asyncio event loop (Linux only)
+watchfiles==1.1.0                   # Hot-reload file watching
+
+# =============================================================================
+# HTTP CLIENT & NETWORKING
+# =============================================================================
+httpx==0.28.1                       # Async HTTP client for API calls
+httpcore==1.0.9                     # Low-level HTTP core library
+h11==0.16.0                         # Pure-Python HTTP/1.1 protocol
+requests==2.32.4                    # Traditional HTTP library for sync operations
+urllib3==2.5.0                      # HTTP library with connection pooling
+certifi==2025.8.3                   # Mozilla's CA Bundle for SSL verification
+charset-normalizer==3.4.3           # Universal character encoding detector
+idna==3.10                          # Internationalized Domain Names
+
+# =============================================================================
+# DATABASE & ORM
+# =============================================================================
+SQLAlchemy==2.0.30                  # Modern Python SQL toolkit and ORM
+sqlalchemy[asyncio]==2.0.30         # Async database support
+alembic==1.13.2                     # Database migration tool
+psycopg2-binary==2.9.9              # PostgreSQL adapter (binary wheel for Linux)
+asyncpg==0.29.0                     # Async PostgreSQL driver
+aiomysql==0.2.0                     # Async MySQL driver
+aiosqlite==0.20.0                   # Async SQLite driver
+greenlet==3.2.4                     # Lightweight microthreads for SQLAlchemy
+
+# =============================================================================
+# ARTIFICIAL INTELLIGENCE & MACHINE LEARNING - FIXED VERSIONS
+# =============================================================================
+# PyTorch - UPDATED to fix security vulnerability CVE-2025-32434
+torch>=2.6.0                        # PyTorch with security fix (REQUIRED >= 2.6)
+torchaudio>=2.6.0                   # Audio processing capabilities
+torchvision>=0.21.0                 # Computer vision capabilities
+
+# Alternative: For CPU-only deployment (uncomment if no GPU needed)
+# torch==2.6.0+cpu                  # CPU-only version
+# torchaudio==2.6.0+cpu            # CPU-only audio
+# torchvision==0.21.0+cpu          # CPU-only vision
+
+# For CUDA support on Jetson/Linux (uncomment as needed)
+# torch==2.6.0+cu118               # CUDA 11.8 support
+# torch==2.6.0+cu121               # CUDA 12.1 support
+
+# Hugging Face Transformers Ecosystem - UPDATED VERSIONS
+transformers>=4.45.0                # UPDATED: Latest version with M2M100 improvements
+tokenizers>=0.20.0                  # UPDATED: Fast tokenization library
+datasets==2.20.0                    # Dataset processing and loading
+evaluate==0.4.2                     # Model evaluation metrics
+accelerate>=0.34.0                  # UPDATED: Distributed training and inference
+safetensors>=0.4.5                  # UPDATED: Safe tensor serialization (REQUIRED)
+huggingface-hub>=0.25.0             # UPDATED: Model repository client
+
+# Additional ML Libraries
+sentencepiece>=0.2.0                # Text tokenization for multilingual models
+protobuf>=4.25.0                    # REQUIRED: Protocol buffers for M2M100 tokenizer
+numpy==1.26.4                       # Fundamental package for scientific computing
+scipy==1.13.1                       # Scientific computing library
+scikit-learn==1.5.1                 # Machine learning library
+pandas==2.2.2                       # Data manipulation and analysis
+
+# =============================================================================
+# AUTHENTICATION & SECURITY
+# =============================================================================
+python-jose[cryptography]==3.3.0    # JSON Web Token implementation
+passlib[bcrypt]==1.7.4              # Password hashing library
+bcrypt==4.2.0                       # Modern password hashing
+cryptography==43.0.0                # Cryptographic recipes and primitives
+python-multipart==0.0.9             # Multipart form data parser
+itsdangerous==2.2.0                 # Safely pass trusted data to untrusted environments
+
+# =============================================================================
+# CONFIGURATION & ENVIRONMENT
+# =============================================================================
+pydantic==2.8.2                     # Data validation using Python type hints
+pydantic-settings==2.4.0            # Settings management with Pydantic
+python-dotenv==1.0.1                # Load environment variables from .env files
+dynaconf==3.2.6                     # Configuration management
+click==8.1.7                        # Command line interface creation toolkit
+
+# =============================================================================
+# TEMPLATING & STATIC FILES
+# =============================================================================
+Jinja2==3.1.4                       # Template engine
+MarkupSafe==2.1.5                   # HTML/XML safety for templates
+aiofiles==24.1.0                    # Async file handling
+
+# =============================================================================
+# WEBSOCKETS & REAL-TIME COMMUNICATION
+# =============================================================================
+websockets==12.0                    # WebSocket implementation
+python-socketio==5.11.3             # Socket.IO server and client
+python-engineio==4.9.1              # Engine.IO server and client
+
+# =============================================================================
+# SESSION & MIDDLEWARE
+# =============================================================================
+itsdangerous==2.2.0                 # Session security
+
+# =============================================================================
+# MONITORING & LOGGING
+# =============================================================================
+loguru==0.7.2                       # Enhanced logging with colors and formatting
+structlog==24.4.0                   # Structured logging
+sentry-sdk[fastapi]==2.12.0         # Error tracking and performance monitoring
+prometheus-client==0.20.0           # Metrics collection
+rich==13.7.1                        # Rich text and beautiful formatting
+
+# =============================================================================
+# DEVELOPMENT & TESTING (Optional - remove in production)
+# =============================================================================
+pytest==8.3.2                       # Testing framework
+pytest-asyncio==0.23.8              # Async test support
+pytest-cov==5.0.0                   # Coverage reporting
+httpx==0.28.1                       # HTTP client for testing
+black==24.8.0                       # Code formatter
+isort==5.13.2                       # Import sorter
+flake8==7.1.1                       # Code linting
+mypy==1.11.1                        # Static type checking
+pre-commit==3.8.0                   # Git hooks framework
+
+# =============================================================================
+# TASK QUEUE & BACKGROUND PROCESSING
+# =============================================================================
+celery==5.4.0                       # Distributed task queue
+redis==5.0.8                        # Redis client for caching/message broker
+dramatiq[redis]==1.17.0             # Fast and reliable background task processing
+
+# =============================================================================
+# FILE HANDLING & UTILITIES
+# =============================================================================
+python-magic==0.4.27                # File type identification
+pillow==10.4.0                      # Image processing library
+pydub==0.25.1                       # Audio file manipulation
+ffmpeg-python==0.2.0                # FFmpeg wrapper for audio/video processing
+
+# =============================================================================
+# PERFORMANCE & OPTIMIZATION
+# =============================================================================
+orjson==3.10.7                      # Fast JSON parsing and serialization
+ujson==5.10.0                       # Ultra fast JSON encoder/decoder
+cython==3.0.11                      # C extensions for Python performance
+psutil==6.0.0                       # System and process monitoring
+
+# =============================================================================
+# LINUX-SPECIFIC OPTIMIZATIONS
+# =============================================================================
+# These packages provide optimized performance on Linux systems
+gunicorn==22.0.0                    # Python WSGI HTTP Server for UNIX
+setproctitle==1.3.3                 # Process title modification (Linux)
+aiomonitor==0.7.0                   # Async application monitor
+
+# =============================================================================
+# UTILITY LIBRARIES
+# =============================================================================
+tqdm==4.66.5                        # Progress bars for long operations
+colorama==0.4.6                     # Cross-platform colored terminal text
+typing-extensions==4.12.2           # Extended typing capabilities
+packaging==24.1                     # Core utilities for Python packages
+setuptools==72.1.0                  # Package development and distribution
+wheel==0.44.0                       # Built package format
+
+# =============================================================================
+# EMAIL & NOTIFICATIONS (Optional)
+# =============================================================================
+email-validator==2.2.0              # Email validation
+emails==0.6                         # Email sending with templates
+jinja2-cli==0.8.2                   # CLI for Jinja2 templating
+
+# =============================================================================
+# DATA SERIALIZATION & VALIDATION
+# =============================================================================
+marshmallow==3.21.3                 # Object serialization/deserialization
+jsonschema==4.23.0                  # JSON Schema validation
+PyYAML==6.0.2                       # YAML parser and emitter
+
+# =============================================================================
+# TIMEZONE & DATE HANDLING
+# =============================================================================
+python-dateutil==2.9.0.post0        # Extensions to datetime module
+pytz==2024.1                        # World timezone definitions
+zoneinfo==0.2.0                     # IANA timezone database access
+
+# =============================================================================
+# LINUX SYSTEM INTEGRATION
+# =============================================================================
+systemd-python==235                 # Python bindings for systemd (Linux only)
+psutil==6.0.0                       # Process and system monitoring
+
+# =============================================================================
+# NVIDIA JETSON OPTIMIZATIONS
+# =============================================================================
+# Uncomment these for Nvidia Jetson Nano/Xavier deployments
+# jetson-stats==4.2.8               # Jetson system monitoring
+# Jetson.GPIO==2.1.6                # GPIO control for Jetson boards
+
+# =============================================================================
+# CONTAINER & DEPLOYMENT
+# =============================================================================
+docker==7.1.0                       # Docker SDK for Python
+kubernetes==30.1.0                  # Kubernetes client library
+
+# =============================================================================
+# MEMORY & CACHE OPTIMIZATION
+# =============================================================================
+pymemcache==4.0.0                   # Memcached client
+hiredis==2.3.2                      # Fast Redis protocol parser
+
+# =============================================================================
+# ADDITIONAL FASTAPI EXTENSIONS
+# =============================================================================
+fastapi-limiter==0.1.6              # Rate limiting
+fastapi-cache2[redis]==0.2.1        # Response caching
+fastapi-users[sqlalchemy]==13.0.0   # Complete user management
+slowapi==0.1.9                      # Rate limiting middleware
+
+# =============================================================================
+# OPTIONAL: MONITORING & OBSERVABILITY
+# =============================================================================
+opentelemetry-api==1.26.0           # OpenTelemetry API
+opentelemetry-sdk==1.26.0           # OpenTelemetry SDK
+opentelemetry-instrumentation-fastapi==0.47b0  # FastAPI instrumentation
+
+# =============================================================================
+# MODEL OPTIMIZATION (Linux/Jetson specific)
+# =============================================================================
+onnx==1.16.2                        # Open Neural Network Exchange
+onnxruntime==1.18.1                 # ONNX runtime for model inference
+# onnxruntime-gpu==1.18.1           # Uncomment for GPU acceleration
+openvino==2024.3.0                  # Intel OpenVINO toolkit for optimization
+
+# =============================================================================
+# AUDIO/VIDEO PROCESSING (if needed)
+# =============================================================================
+librosa==0.10.2                     # Audio analysis library
+soundfile==0.12.1                   # Audio file I/O
+moviepy==1.0.3                      # Video editing library
+
+# =============================================================================
+# LINUX DEPLOYMENT HELPERS
+# =============================================================================
+supervisor==4.2.5                   # Process monitoring and control
+flower==2.0.1                       # Celery monitoring tool
