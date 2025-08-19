@@ -1,7 +1,7 @@
 """
-Translation service using local Hugging Face models for chat application.
+Translation service using Facebook M2M100 model for chat application.
 Supports English, French, and Arabic translations with local caching.
-Note: Arabic-to-other translations are not available due to missing Helsinki-NLP models.
+Uses single lightweight model (418M) optimized for Nvidia Jetson compatibility.
 """
 
 import os
@@ -9,7 +9,7 @@ import logging
 import asyncio
 import concurrent.futures
 from typing import Dict, Optional, Any, List
-from transformers import MarianMTModel, MarianTokenizer
+from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 import torch
 
 # Configure logging
@@ -23,9 +23,14 @@ class TranslationService:
     """
     
     def __init__(self):
-        self.models: Dict[str, Any] = {}
-        self.tokenizers: Dict[str, Any] = {}
+        # Single model and tokenizer for all translations
+        self.model = None
+        self.tokenizer = None
         self.cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "artifacts", "models")
+        
+        # Use single M2M100 model for all translations (Jetson-optimized)
+        self.model_name = "facebook/m2m100_418M"
+        self.model_cache_path = os.path.join(self.cache_dir, "m2m100_418M")
         
         # Logging configuration
         self.verbose_logging = False  # Detailed logs for debugging
@@ -49,95 +54,90 @@ class TranslationService:
         # Log device information (startup only)
         if torch.cuda.is_available():
             gpu_name = torch.cuda.get_device_name(0)
-            logger.info(f"🚀 Translation service: CUDA GPU detected ({gpu_name})")
+            logger.info(f"🚀 M2M100 Translation service: CUDA GPU detected ({gpu_name})")
         else:
-            logger.info("🖥️  Translation service: Using CPU")
+            logger.info("🖥️  M2M100 Translation service: Using CPU")
         
-        # ONLY tc-big models - these are the only models we use
-        self.model_mappings = {
-            ("en", "fr"): "Helsinki-NLP/opus-mt-tc-big-en-fr",
-            ("fr", "en"): "Helsinki-NLP/opus-mt-tc-big-fr-en",
-            ("en", "ar"): "Helsinki-NLP/opus-mt-tc-big-en-ar",
-            ("ar", "en"): "Helsinki-NLP/opus-mt-tc-big-ar-en",
-        }
-        
+        # Language mappings for M2M100 (single model supports all pairs)
         self.supported_languages = {"en", "fr", "ar"}
+        self.language_codes = {
+            "en": "en",
+            "fr": "fr", 
+            "ar": "ar"
+        }
         
         # Ensure cache directory exists
         os.makedirs(self.cache_dir, exist_ok=True)
+        os.makedirs(self.model_cache_path, exist_ok=True)
+        
+        # Load the single M2M100 model at startup
+        self._load_m2m100_model()
         
         if self.essential_logging:
-            logger.info(f"Translation service initialized with cache directory: {self.cache_dir}")
-            logger.info("Available translations: EN↔FR, EN↔AR (tc-big models only)")
+            logger.info(f"M2M100 Translation service initialized with cache directory: {self.cache_dir}")
+            logger.info("✅ Single M2M100 model supports all language pairs: EN↔FR↔AR")
     
-    def _get_model_key(self, source_lang: str, target_lang: str) -> str:
-        """Generate model key for language pair."""
-        return f"{source_lang}-{target_lang}"
-    
-    def _load_model(self, source_lang: str, target_lang: str) -> bool:
-        """
-        Load tc-big translation model for specified language pair.
-        Downloads and caches model locally if not already available.
-        """
-        model_key = self._get_model_key(source_lang, target_lang)
-        
-        # Check if model is already loaded
-        if model_key in self.models and model_key in self.tokenizers:
-            return True
-        
-        # Get tc-big model name from mappings
-        model_name = self.model_mappings.get((source_lang, target_lang))
-        if not model_name:
-            if self.essential_logging:
-                logger.warning(f"❌ No tc-big model available for {source_lang} → {target_lang}")
-            return False
-        
-        # Load the tc-big model
-        return self._try_load_model_variant(model_key, model_name)
-    
-    def _try_load_model_variant(self, model_key: str, model_name: str) -> bool:
-        """Try to load a specific model variant."""
-        local_model_path = os.path.join(self.cache_dir, model_key)
-        
+    def _load_m2m100_model(self):
+        """Load the M2M100 model and tokenizer."""
         try:
-            # Try to load from local cache first
-            if os.path.exists(local_model_path):
-                if self.essential_logging:
-                    logger.info(f"📂 Loading cached model: {model_key}")
-                tokenizer = MarianTokenizer.from_pretrained(local_model_path)
-                model = MarianMTModel.from_pretrained(local_model_path)
-            else:
-                # Download and cache model
-                if self.essential_logging:
-                    logger.info(f"⬇️  Downloading model: {model_name}")
-                tokenizer = MarianTokenizer.from_pretrained(model_name, cache_dir=self.cache_dir)
-                model = MarianMTModel.from_pretrained(model_name, cache_dir=self.cache_dir)
-                
-                # Save to local directory for faster future loading
-                tokenizer.save_pretrained(local_model_path)
-                model.save_pretrained(local_model_path)
-                if self.essential_logging:
-                    logger.info(f"💾 Model cached: {model_key}")
-            
-            # Move model to the correct device (GPU/CPU)
-            model = model.to(self.device)
-            
-            # Store in memory
-            self.tokenizers[model_key] = tokenizer
-            self.models[model_key] = model
-            
             if self.verbose_logging:
-                logger.info(f"Model {model_key} loaded successfully using {model_name}")
-                logger.info(f"⚡ Model loaded on device: {self.device}")
-            return True
+                logger.info(f"📂 Loading M2M100 model: {self.model_name}")
             
+            # Try to load from local cache first
+            if os.path.exists(self.model_cache_path) and os.path.isdir(self.model_cache_path):
+                try:
+                    if self.verbose_logging:
+                        logger.info(f"📁 Loading M2M100 from cache: {self.model_cache_path}")
+                    
+                    self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_cache_path)
+                    self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_cache_path)
+                    
+                    if self.verbose_logging:
+                        logger.info("✅ M2M100 model loaded from cache")
+                    
+                except Exception as e:
+                    if self.verbose_logging:
+                        logger.warning(f"⚠️  Failed to load M2M100 from cache: {e}")
+                    # Fall back to downloading
+                    self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name, cache_dir=self.cache_dir)
+                    self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name, cache_dir=self.cache_dir)
+                    
+                    # Save to our custom cache location
+                    self.tokenizer.save_pretrained(self.model_cache_path)
+                    self.model.save_pretrained(self.model_cache_path)
+                    
+                    if self.verbose_logging:
+                        logger.info("✅ M2M100 model downloaded and cached")
+            else:
+                # Download and cache the model
+                if self.verbose_logging:
+                    logger.info("📥 Downloading M2M100 model...")
+                
+                self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name, cache_dir=self.cache_dir)
+                self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name, cache_dir=self.cache_dir)
+                
+                # Save to our custom cache location
+                self.tokenizer.save_pretrained(self.model_cache_path)
+                self.model.save_pretrained(self.model_cache_path)
+                
+                if self.verbose_logging:
+                    logger.info("✅ M2M100 model downloaded and cached")
+            
+            # Move model to appropriate device (GPU if available)
+            self.model.to(self.device)
+            
+            if self.essential_logging:
+                logger.info(f"🤖 M2M100 model loaded on {self.device}")
+                
         except Exception as e:
-            logger.error(f"Failed to load model {model_key} using {model_name}: {str(e)}")
-            return False
-    
+            logger.error(f"❌ Failed to load M2M100 model: {e}")
+            self.model = None
+            self.tokenizer = None
+            raise
+
     def translate_text(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
         """
-        Translate text from source language to target language (optimized for performance).
+        Translate text from source language to target language using M2M100.
         
         Args:
             text: Text to translate
@@ -158,7 +158,7 @@ class TranslationService:
         
         # Detailed logging for debugging
         if self.verbose_logging:
-            logger.info(f"🔄 Translation: {source_lang} -> {target_lang} | Text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+            logger.info(f"🔄 M2M100 Translation: {source_lang} -> {target_lang} | Text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
         
         # Validate languages
         if source_lang not in self.supported_languages or target_lang not in self.supported_languages:
@@ -170,32 +170,86 @@ class TranslationService:
         # Skip translation if languages are the same
         if source_lang == target_lang:
             if self.verbose_logging:
-                logger.info(f"⏭️  Same language detected, returning original text")
+                logger.info("⏭️  Same language detected, returning original text")
             self.translation_stats["successful_translations"] += 1
             return text
         
-        # Use only direct tc-big models - no fallbacks
-        if self._load_model(source_lang, target_lang):
-            result = self._translate_direct(text, source_lang, target_lang)
+        # Check if M2M100 model is loaded
+        if self.model is None or self.tokenizer is None:
+            if self.essential_logging:
+                logger.error("❌ M2M100 model not loaded")
+            self.translation_stats["failed_translations"] += 1
+            return None
+        
+        try:
+            # Use M2M100 for translation
+            result = self._translate_m2m100(text, source_lang, target_lang)
             if result and result != text:
                 self.translation_stats["successful_translations"] += 1
                 if source_lang == "ar" or target_lang == "ar":
                     self.translation_stats["arabic_translations"] += 1
                 if self.verbose_logging:
-                    logger.info(f"✅ tc-big translation successful: {source_lang} → {target_lang}")
+                    logger.info(f"✅ M2M100 translation successful: {source_lang} → {target_lang}")
                 return result
             else:
                 self.translation_stats["failed_translations"] += 1
                 if self.essential_logging:
-                    logger.warning(f"⚠️  tc-big translation failed: {source_lang} → {target_lang}")
+                    logger.warning(f"⚠️  M2M100 translation failed: {source_lang} → {target_lang}")
                 return None
-        else:
-            # No tc-big model available for this language pair
+                
+        except Exception as e:
             self.translation_stats["failed_translations"] += 1
             if self.essential_logging:
-                logger.warning(f"❌ No tc-big model available: {source_lang} → {target_lang}")
+                logger.error(f"❌ M2M100 translation error: {source_lang} → {target_lang}: {e}")
             return None
     
+    def _translate_m2m100(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
+        """
+        Translate text using M2M100 model.
+        
+        Args:
+            text: Text to translate
+            source_lang: Source language code (en, fr, ar)
+            target_lang: Target language code (en, fr, ar)
+            
+        Returns:
+            Translated text or None if translation fails
+        """
+        try:
+            # Set source language for the tokenizer
+            self.tokenizer.src_lang = self.language_codes[source_lang]
+            
+            # Tokenize the input text
+            encoded = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            
+            # Move tensors to the same device as the model
+            encoded = {k: v.to(self.device) for k, v in encoded.items()}
+            
+            # Generate translation
+            with torch.no_grad():
+                # Force the target language
+                forced_bos_token_id = self.tokenizer.get_lang_id(self.language_codes[target_lang])
+                generated_tokens = self.model.generate(
+                    **encoded,
+                    forced_bos_token_id=forced_bos_token_id,
+                    max_length=512,
+                    num_beams=5,
+                    early_stopping=True
+                )
+            
+            # Decode the translation
+            translation = self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
+            
+            if self.verbose_logging:
+                logger.info(f"🤖 M2M100 translation: '{text[:30]}...' → '{translation[:30]}...'")
+            
+            return translation.strip()
+            
+        except Exception as e:
+            if self.essential_logging:
+                logger.error(f"❌ M2M100 translation error: {e}")
+            return None
+
     async def translate_text_async(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
         """
         Asynchronously translate text from source language to target language.
@@ -262,137 +316,6 @@ class TranslationService:
         
         return result
     
-    def _translate_direct(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
-        """
-        Translate from Arabic to other languages using alternative approach (optimized).
-        """
-        if self.verbose_logging:
-            logger.info(f"Arabic to {target_lang} translation")
-        
-        if target_lang == "en":
-            # Try pattern-based translation first (fastest)
-            result = self._pattern_based_arabic_translation(text, target_lang)
-            if result and result != text:
-                return result
-            
-            # Try mBART model as fallback
-            try:
-                result = self._try_mbart_translation(text, "ar", "en")
-                if result and result != text:
-                    return result
-            except Exception:
-                pass
-            
-            # Return with minimal notation
-            return f"[AR->EN: {text}]"
-                
-        elif target_lang == "fr":
-            result = self._pattern_based_arabic_translation(text, target_lang)
-            if result and result != text:
-                return result
-            return f"[AR->FR: {text}]"
-        
-        return text
-    
-    def _translate_from_arabic(self, text: str, target_lang: str) -> Optional[str]:
-        """
-        Translate from Arabic to other languages using alternative approach.
-        Since Helsinki-NLP ar->en and ar->fr models don't exist, we'll try:
-        1. Alternative model repositories
-        2. Two-step translation if available
-        3. Return original with clear logging
-        """
-        logger.info(f"🔄 Starting Arabic to {target_lang} translation")
-        logger.info(f"📝 Input text: '{text[:100]}{'...' if len(text) > 100 else ''}'")
-        
-        if target_lang == "en":
-            # Try alternative Arabic to English models
-            logger.info("� Searching for alternative Arabic->English translation methods")
-            
-            # Method 1: Try Facebook's M2M100 model (if available)
-            try:
-                logger.info("🧪 Attempting to use alternative translation approach...")
-                # For now, we'll implement a simple character-by-character or word approach
-                # This is a placeholder for a more sophisticated solution
-                
-                # Method 2: Use reverse translation as approximation
-                # English -> Arabic works, so we can compare patterns
-                if self._load_model("en", "ar"):
-                    logger.info("💡 Using pattern-based approach with en->ar model as reference")
-                    # Use new helper methods for better translation
-                    result = self._pattern_based_arabic_translation(text, target_lang)
-                    if result and result != text:
-                        return result
-                    
-                    # Try mBART model
-                    try:
-                        result = self._try_mbart_translation(text, "ar", "en")
-                        if result and result != text:
-                            return result
-                    except Exception as e:
-                        logger.warning(f"mBART failed: {str(e)}")
-                    
-                    # For demo purposes, add a note that this is Arabic text
-                    return f"[Offline AR->EN: {text}]"
-                
-            except Exception as e:
-                logger.error(f"❌ Alternative translation method failed: {str(e)}")
-                
-        elif target_lang == "fr":
-            logger.info("� Attempting Arabic to French translation")
-            logger.warning("⚠️  Arabic->French: No direct model available")
-            return f"[AR->FR: {text}]"
-        
-        logger.info(f"✅ Arabic translation completed (with limitations)")
-        return text
-    
-    def _translate_to_arabic(self, text: str, source_lang: str) -> Optional[str]:
-        """
-        Translate to Arabic from other languages.
-        """
-        # We have en-ar and fr-ar models that work
-        if self._load_model(source_lang, "ar"):
-            return self._translate_direct(text, source_lang, "ar")
-        
-        logger.error(f"No model available for {source_lang} -> ar")
-        return text
-    
-    def _translate_direct(self, text: str, source_lang: str, target_lang: str) -> Optional[str]:
-        """Perform direct translation using loaded model (optimized for performance)."""
-        model_key = self._get_model_key(source_lang, target_lang)
-        
-        try:
-            # Get model and tokenizer (already loaded)
-            tokenizer = self.tokenizers[model_key]
-            model = self.models[model_key]
-            
-            # Tokenize input text (batch-ready)
-            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
-            
-            # Move to device only if not already there
-            if inputs['input_ids'].device != self.device:
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            # Generate translation with optimized settings
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs, 
-                    max_length=512, 
-                    num_beams=2,  # Reduced from 4 for speed
-                    early_stopping=True,
-                    do_sample=False  # Deterministic for speed
-                )
-            
-            # Decode translation
-            translated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            return translated_text
-            
-        except Exception as e:
-            if self.verbose_logging:
-                logger.error(f"Translation failed for {source_lang}->{target_lang}: {str(e)}")
-            return None
-    
     def get_available_translations(self, source_lang: str) -> list:
         """
         Get list of available target languages for a source language.
@@ -415,7 +338,7 @@ class TranslationService:
     
     def translate_batch(self, texts: list, source_lang: str, target_lang: str) -> list:
         """
-        Translate multiple texts in a single batch for better performance.
+        Translate multiple texts in a single batch using M2M100.
         
         Args:
             texts: List of texts to translate
@@ -430,12 +353,12 @@ class TranslationService:
         
         # Log batch start
         if self.verbose_logging:
-            logger.info(f"🔄 Sync batch translation: {len(texts)} texts | {source_lang} -> {target_lang}")
+            logger.info(f"🔄 M2M100 batch translation: {len(texts)} texts | {source_lang} -> {target_lang}")
         
         # Skip if same language
         if source_lang == target_lang:
             if self.verbose_logging:
-                logger.info(f"⏭️  Same language batch, returning original texts")
+                logger.info("⏭️  Same language batch, returning original texts")
             return texts
         
         # Handle single text efficiently
@@ -443,22 +366,18 @@ class TranslationService:
             result = self.translate_text(texts[0], source_lang, target_lang)
             return [result if result else texts[0]]
         
-        # For Arabic translations, use optimized batch processing
-        if source_lang == "ar" or target_lang == "ar":
-            return self._batch_translate_arabic(texts, source_lang, target_lang)
-        
-        # Batch processing for supported pairs (en<->fr)
-        model_key = self._get_model_key(source_lang, target_lang)
-        
-        if not self._load_model(source_lang, target_lang):
+        # Check if M2M100 model is loaded
+        if self.model is None or self.tokenizer is None:
+            if self.essential_logging:
+                logger.error("❌ M2M100 model not loaded for batch translation")
             return texts
         
         try:
-            tokenizer = self.tokenizers[model_key]
-            model = self.models[model_key]
+            # Set source language for M2M100 tokenizer
+            self.tokenizer.src_lang = self.language_codes[source_lang]
             
             # Batch tokenization
-            inputs = tokenizer(
+            inputs = self.tokenizer(
                 texts, 
                 return_tensors="pt", 
                 padding=True, 
@@ -469,42 +388,37 @@ class TranslationService:
             # Move to device
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
-            # Batch generation with optimized settings
+            # Batch generation with M2M100
             with torch.no_grad():
-                outputs = model.generate(
+                # Force the target language
+                forced_bos_token_id = self.tokenizer.get_lang_id(self.language_codes[target_lang])
+                outputs = self.model.generate(
                     **inputs,
+                    forced_bos_token_id=forced_bos_token_id,
                     max_length=512,
-                    num_beams=2,  # Reduced for speed
-                    early_stopping=True,
-                    do_sample=False
+                    num_beams=5,
+                    early_stopping=True
                 )
             
             # Batch decode
-            translated_texts = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            translated_texts = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            
+            if self.verbose_logging:
+                logger.info(f"✅ M2M100 batch translation completed: {len(translated_texts)} texts")
             
             return translated_texts
             
         except Exception as e:
-            if self.verbose_logging:
-                logger.error(f"Batch translation failed: {str(e)}")
-            return texts
-    
-    def _batch_translate_arabic(self, texts: list, source_lang: str, target_lang: str) -> list:
-        """
-        Optimized batch translation for Arabic texts using pattern matching and mBART.
-        
-        Args:
-            texts: List of texts to translate
-            source_lang: Source language code
-            target_lang: Target language code
-            
-        Returns:
-            List of translated texts
-        """
-        results = []
-        
-        # Batch process pattern-based translations first
-        pattern_results = []
+            if self.essential_logging:
+                logger.error(f"❌ M2M100 batch translation failed: {str(e)}")
+            # Fall back to individual translations
+            results = []
+            for text in texts:
+                result = self.translate_text(text, source_lang, target_lang)
+                results.append(result if result else text)
+            return results
+
+    def get_statistics(self) -> dict:
         for text in texts:
             if source_lang == "ar":
                 pattern_result = self._pattern_based_arabic_translation(text, target_lang)
