@@ -58,8 +58,8 @@ torchvision>=0.21.0                 # Computer vision capabilities
 # torch==2.6.0+cu118               # CUDA 11.8 support
 # torch==2.6.0+cu121               # CUDA 12.1 support
 
-# Hugging Face Transformers Ecosystem - UPDATED VERSIONS
-transformers>=4.45.0                # UPDATED: Latest version with M2M100 improvements
+# Hugging Face Transformers Ecosystem - HELSINKI-NLP OPUS MODELS
+transformers>=4.45.0                # UPDATED: Latest version with Helsinki-NLP OPUS support
 tokenizers>=0.20.0                  # UPDATED: Fast tokenization library
 datasets==2.20.0                    # Dataset processing and loading
 evaluate==0.4.2                     # Model evaluation metrics
@@ -69,7 +69,7 @@ huggingface-hub>=0.25.0             # UPDATED: Model repository client
 
 # Additional ML Libraries
 sentencepiece>=0.2.0                # Text tokenization for multilingual models
-protobuf>=4.25.0                    # REQUIRED: Protocol buffers for M2M100 tokenizer
+protobuf>=4.25.0                    # REQUIRED: Protocol buffers for Helsinki-NLP tokenizers
 numpy==1.26.4                       # Fundamental package for scientific computing
 scipy==1.13.1                       # Scientific computing library
 scikit-learn==1.5.1                 # Machine learning library
