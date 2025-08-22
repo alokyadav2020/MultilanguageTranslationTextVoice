@@ -64,10 +64,18 @@ def chat_history(
         {
             "id": m.id,
             "sender_id": m.sender_id,
+            "sender": {
+                "id": m.sender.id,
+                "name": m.sender.full_name or m.sender.email
+            },
             "original_text": m.original_text,
             "original_language": m.original_language,
+            "message_type": m.message_type.value if m.message_type else "text",
             "translations_cache": m.translations_cache or {},
             "timestamp": m.timestamp.isoformat() if m.timestamp else None,
+            # Voice-specific fields
+            "audio_urls": m.audio_urls if hasattr(m, 'audio_urls') else None,
+            "audio_duration": m.audio_duration if hasattr(m, 'audio_duration') else None,
         }
         for m in messages
     ]

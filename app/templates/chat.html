@@ -1,4 +1,177 @@
 {% extends 'base.html' %}
+
+{% block extra_head %}
+<style>
+/* Voice Chat UI Styles */
+.blink {
+  animation: blink-animation 1s infinite;
+}
+
+@keyframes blink-animation {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+.voice-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 123, 255, 0.1);
+  margin: 4px 0;
+}
+
+.voice-message.mine {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.audio-waveform {
+  flex: 1;
+  height: 30px;
+  background: linear-gradient(90deg, #007bff 0%, #0056b3 100%);
+  border-radius: 15px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.audio-waveform.mine {
+  background: linear-gradient(90deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+.play-voice-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.play-voice-btn:hover {
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.play-voice-btn i {
+  font-size: 14px;
+  margin-left: 2px; /* Offset to center the play triangle */
+}
+
+.play-voice-btn.btn-light {
+  background: rgba(0, 123, 255, 0.1);
+  border-color: rgba(0, 123, 255, 0.3);
+  color: #007bff;
+}
+
+.play-voice-btn.btn-light:hover {
+  background: rgba(0, 123, 255, 0.2);
+  border-color: rgba(0, 123, 255, 0.6);
+}
+
+.voice-duration {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
+.voice-transcription {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+#recording-indicator {
+  position: absolute;
+  right: 80px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid #dc3545;
+}
+
+/* Recording button styles */
+#voice-record-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #007bff;
+  background: rgba(0, 123, 255, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+#voice-record-btn:hover {
+  transform: scale(1.05);
+  background: rgba(0, 123, 255, 0.2);
+  border-color: #0056b3;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+#voice-record-btn i {
+  font-size: 18px;
+  color: #007bff;
+  transition: color 0.3s ease;
+}
+
+#voice-record-btn:hover i {
+  color: #0056b3;
+}
+
+/* Recording state styles */
+#voice-record-btn.btn-danger {
+  background: rgba(220, 53, 69, 0.2);
+  border-color: #dc3545;
+  animation: pulse-red 1.5s infinite;
+}
+
+#voice-record-btn.btn-danger i {
+  color: #dc3545;
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+
+.message-bubble {
+  position: relative;
+}
+
+.language-badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  color: #666;
+}
+
+.translation-note {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-style: italic;
+  margin-top: 2px;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
   <div class="col-lg-8 mx-auto">
@@ -21,13 +194,20 @@
       </div>
       <div class="card-body p-0 d-flex flex-column" style="height:60vh;">
         <div id="messages" class="flex-grow-1 overflow-auto p-3 small bg-light"></div>
-        <form id="chat-form" class="border-top p-2 d-flex gap-2">
-          <!-- <select id="input-language" class="form-select" style="width: 120px;">
-            <option value="en" {{ 'selected' if current_user.preferred_language == 'en' else '' }}>EN</option>
-            <option value="fr" {{ 'selected' if current_user.preferred_language == 'fr' else '' }}>FR</option>
-            <option value="ar" {{ 'selected' if current_user.preferred_language == 'ar' else '' }}>AR</option>
-          </select> -->
+        <form id="chat-form" class="border-top p-2 d-flex gap-2 align-items-center">
           <input id="message-input" autocomplete="off" class="form-control" placeholder="Type a message" />
+          
+          <!-- Voice recording button -->
+          <button id="voice-record-btn" type="button" class="btn btn-outline-primary" title="Record Voice Message">
+            <i class="fas fa-microphone"></i>
+          </button>
+          
+          <!-- Recording indicator -->
+          <div id="recording-indicator" class="d-none align-items-center text-danger">
+            <i class="fas fa-circle blink me-1"></i>
+            <small>Recording...</small>
+          </div>
+          
           <button class="btn btn-primary" type="submit">Send</button>
         </form>
       </div>
@@ -52,6 +232,134 @@
   let typingTimeout; // For typing indicator timing
   let typingIndicatorElement; // Track typing indicator
   let onlineStatusCheckInterval; // For periodic online status checks
+
+  // Voice recording variables
+  let mediaRecorder;
+  let audioChunks = [];
+  let isRecording = false;
+  let audioStream;
+
+  // Initialize voice recording functionality
+  function initializeVoiceRecording() {
+    const recordBtn = document.getElementById('voice-record-btn');
+    const recordingIndicator = document.getElementById('recording-indicator');
+    
+    recordBtn.addEventListener('click', function() {
+      if (!isRecording) {
+        startVoiceRecording();
+      } else {
+        stopVoiceRecording();
+      }
+    });
+  }
+
+  // Start voice recording
+  async function startVoiceRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        } 
+      });
+      
+      audioStream = stream;
+      audioChunks = [];
+      
+      // Create MediaRecorder
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      mediaRecorder.ondataavailable = function(event) {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = function() {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        sendVoiceMessage(audioBlob);
+        
+        // Stop all tracks
+        audioStream.getTracks().forEach(track => track.stop());
+      };
+      
+      // Start recording
+      mediaRecorder.start();
+      isRecording = true;
+      
+      // Update UI
+      updateRecordingUI(true);
+      
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      alert('Could not access microphone. Please check permissions.');
+    }
+  }
+
+  // Stop voice recording
+  function stopVoiceRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      isRecording = false;
+      updateRecordingUI(false);
+    }
+  }
+
+  // Update recording UI
+  function updateRecordingUI(recording) {
+    const recordBtn = document.getElementById('voice-record-btn');
+    const recordingIndicator = document.getElementById('recording-indicator');
+    
+    if (recording) {
+      recordBtn.innerHTML = '<i class="fas fa-stop"></i>';
+      recordBtn.className = 'btn btn-danger';
+      recordingIndicator.classList.remove('d-none');
+      recordingIndicator.classList.add('d-flex');
+    } else {
+      recordBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+      recordBtn.className = 'btn btn-outline-primary';
+      recordingIndicator.classList.add('d-none');
+      recordingIndicator.classList.remove('d-flex');
+    }
+  }
+
+  // Send voice message to server
+  async function sendVoiceMessage(audioBlob) {
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'voice_message.webm');
+      formData.append('language', document.getElementById('language-select').value);
+      formData.append('recipient_id', otherUserId);
+      
+      const response = await fetch('/api/voice/upload-message', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to send voice message');
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('Voice message sent:', result);
+        // Voice message will be received via WebSocket
+      } else {
+        throw new Error(result.error || 'Unknown error');
+      }
+      
+    } catch (error) {
+      console.error('Error sending voice message:', error);
+      addSystem('[Voice message failed to send: ' + error.message + ']');
+    }
+  }
 
   // Online status functions
   function updateUserOnlineStatus(isOnline) {
@@ -155,6 +463,154 @@
     wrap.appendChild(bubble); box.appendChild(wrap); box.scrollTop=box.scrollHeight;
   }
 
+  // Add voice message to chat
+  function addVoiceMessage(senderId, senderEmail, originalText, audioUrls = {}, originalLang = 'en', translationsCache = {}, timestamp = null, audioDuration = 0) {
+    const mine = Number(senderId) === Number(currentUserId);
+    const wrap = document.createElement('div');
+    wrap.className = 'mb-1 d-flex ' + (mine ? 'justify-content-end' : 'justify-content-start');
+    
+    const bubble = document.createElement('div');
+    bubble.className = 'px-2 py-1 rounded message-bubble ' + (mine ? 'bg-primary text-white' : 'bg-white border');
+    bubble.style.maxWidth = '70%';
+    
+    const label = mine ? 'You' : senderEmail;
+    
+    // Format timestamp
+    let timeStr = '';
+    if (timestamp) {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      
+      if (isToday) {
+        timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      } else {
+        timeStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      }
+    }
+    
+    // Get appropriate text and audio URL to display
+    const displayData = getDisplayText(originalText, originalLang, translationsCache);
+    const displayText = displayData.text;
+    const audioUrl = getAudioUrlForLanguage(audioUrls, userLanguage, originalLang);
+    
+    // Format duration
+    const durationStr = formatDuration(audioDuration);
+    
+    // Create voice message content
+    let messageContent = `
+      <div>
+        <strong class="me-1">${label}:</strong>
+        <span class="language-badge">${originalLang.toUpperCase()}</span>
+        <div class="voice-message ${mine ? 'mine' : ''} mt-2">
+          <button class="play-voice-btn btn ${mine ? 'btn-light' : 'btn-primary'} btn-sm" data-audio-url="${audioUrl}">
+            <i class="fas fa-play"></i>
+          </button>
+          <div class="audio-waveform ${mine ? 'mine' : ''}">
+            <small class="${mine ? 'text-primary' : 'text-white'}">
+              <i class="fas fa-volume-up me-1"></i>Voice Message
+            </small>
+          </div>
+          <small class="voice-duration">${durationStr}</small>
+        </div>
+        <div class="voice-transcription">
+          <small>"${displayText}"</small>
+        </div>
+    `;
+    
+    // Add timestamp
+    if (timeStr) {
+      messageContent += `<br><small class="text-muted opacity-75"><i class="fas fa-clock me-1"></i>${timeStr}</small>`;
+    }
+    
+    // Add translation note
+    if (displayData.isTranslated) {
+      messageContent += `<div class="translation-note">Translated from ${originalLang.toUpperCase()}: "${originalText}"</div>`;
+    }
+    
+    messageContent += '</div>';
+    bubble.innerHTML = messageContent;
+    
+    // Add click event for play button
+    const playBtn = bubble.querySelector('.play-voice-btn');
+    playBtn.addEventListener('click', function() {
+      playVoiceMessage(audioUrl, playBtn);
+    });
+    
+    wrap.appendChild(bubble);
+    box.appendChild(wrap);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // Get audio URL for user's preferred language
+  function getAudioUrlForLanguage(audioUrls, userLang, originalLang) {
+    if (!audioUrls) return null;
+    
+    // Try user's preferred language first
+    if (audioUrls[userLang]) {
+      return audioUrls[userLang];
+    }
+    
+    // Fallback to original language
+    if (audioUrls[originalLang]) {
+      return audioUrls[originalLang];
+    }
+    
+    // Return any available audio
+    const availableUrls = Object.values(audioUrls);
+    return availableUrls.length > 0 ? availableUrls[0] : null;
+  }
+
+  // Format duration in mm:ss
+  function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return '0:00';
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+
+  // Play voice message
+  function playVoiceMessage(audioUrl, playBtn) {
+    if (!audioUrl) {
+      console.error('No audio URL provided');
+      return;
+    }
+    
+    const audio = new Audio(audioUrl);
+    const icon = playBtn.querySelector('i');
+    
+    // Update button to show playing state
+    icon.className = 'fas fa-pause';
+    playBtn.disabled = true;
+    
+    audio.play().catch(error => {
+      console.error('Error playing audio:', error);
+      icon.className = 'fas fa-play';
+      playBtn.disabled = false;
+    });
+    
+    audio.onended = function() {
+      icon.className = 'fas fa-play';
+      playBtn.disabled = false;
+    };
+    
+    audio.onerror = function() {
+      icon.className = 'fas fa-play';
+      playBtn.disabled = false;
+      console.error('Error loading audio file');
+    };
+    
+    // Allow pausing
+    playBtn.onclick = function() {
+      if (!audio.paused) {
+        audio.pause();
+        icon.className = 'fas fa-play';
+        playBtn.disabled = false;
+      }
+    };
+  }
+
   function showTypingIndicator() {
     // Remove existing typing indicator
     hideTypingIndicator();
@@ -232,14 +688,29 @@
       // Hide typing indicator when message arrives
       hideTypingIndicator();
       
-      addMessage(
-        data.sender.id, 
-        data.sender.name || data.sender.email, 
-        data.original_text,
-        data.original_language || 'en',
-        data.translations_cache || {},
-        data.timestamp
-      );
+      // Check if it's a voice message
+      if (data.message_type === 'voice' && data.audio_urls) {
+        addVoiceMessage(
+          data.sender.id,
+          data.sender.name || data.sender.email,
+          data.original_text,
+          data.audio_urls || {},
+          data.original_language || 'en',
+          data.translations_cache || {},
+          data.timestamp,
+          data.audio_duration || 0
+        );
+      } else {
+        // Regular text message
+        addMessage(
+          data.sender.id, 
+          data.sender.name || data.sender.email, 
+          data.original_text,
+          data.original_language || 'en',
+          data.translations_cache || {},
+          data.timestamp
+        );
+      }
     } catch(err){ console.error('WS error', err, ev.data); addSystem('[Bad message]'); }
   };
 
@@ -268,14 +739,31 @@
     fetch(`/api/chat/history/${otherUserId}`, {headers:{'Authorization':`Bearer ${token}`}})
       .then(r=>r.ok?r.json():[])
       .then(rows=>{ 
-        rows.forEach(m=> addMessage(
-          m.sender_id, 
-          m.sender_id===currentUserId?currentUserName:otherUserName, 
-          m.original_text,
-          m.original_language || 'en',
-          m.translations_cache || {},
-          m.timestamp
-        )); 
+        rows.forEach(m=> {
+          // Check if it's a voice message
+          if (m.message_type === 'voice' && m.audio_urls) {
+            addVoiceMessage(
+              m.sender_id,
+              m.sender_id === currentUserId ? currentUserName : otherUserName,
+              m.original_text,
+              m.audio_urls || {},
+              m.original_language || 'en',
+              m.translations_cache || {},
+              m.timestamp,
+              m.audio_duration || 0
+            );
+          } else {
+            // Regular text message
+            addMessage(
+              m.sender_id, 
+              m.sender_id === currentUserId ? currentUserName : otherUserName, 
+              m.original_text,
+              m.original_language || 'en',
+              m.translations_cache || {},
+              m.timestamp
+            );
+          }
+        }); 
       })
       .catch(()=>{});
   }
@@ -371,6 +859,15 @@
   //     // Don't show error to user, just log it
   //   });
   // });
+
+  // Initialize voice recording functionality
+  initializeVoiceRecording();
+
+  // Check browser compatibility for voice recording
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById('voice-record-btn').style.display = 'none';
+    console.warn('Voice recording not supported in this browser');
+  }
 
   // // Cleanup on page unload
   // window.addEventListener('beforeunload', function() {

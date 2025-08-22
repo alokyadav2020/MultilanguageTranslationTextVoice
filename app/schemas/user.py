@@ -37,9 +37,24 @@ class UserCreate(UserBase):
 
 class UserRead(UserBase):
     id: int
+    is_active: bool = True
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    preferred_language: Optional[str] = None
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserStats(BaseModel):
+    total_messages: int
+    voice_messages: int
+    total_voice_duration: float  # in seconds
+    preferred_language: str
 # ...existing code...
 

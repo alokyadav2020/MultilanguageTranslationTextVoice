@@ -1,17 +1,21 @@
-from fastapi import FastAPI, Request, Depends, Form
+from fastapi import FastAPI, Request, Depends, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import logging
+import os
+import uuid
+import json
+from pathlib import Path
 from .core.config import get_settings
 from .core.database import engine, Base, get_db
 from .core.migrate import run_startup_migrations
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .models.user import User
-from .api import auth, users, chat_ws, translation
+from .api import auth, users, chat_ws, translation, voice_chat
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -48,6 +52,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(chat_ws.router)
 app.include_router(translation.router)
+app.include_router(voice_chat.router)
 
 
 @app.on_event("startup")
@@ -285,3 +290,191 @@ async def logout(request: Request):
     response.headers["Expires"] = "0"
     
     return response
+
+
+# ===================================
+# VOICE CHAT API ENDPOINTS
+# ===================================
+
+@app.post("/api/voice/upload-message")
+async def upload_voice_message(
+    audio: UploadFile = File(...),
+    language: str = Form(...),
+    recipient_id: int = Form(...),
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Upload and process voice message endpoint
+    Available at: POST /api/voice/upload-message
+    """
+    try:
+        # Get current user from session token
+        current_user = get_current_ui_user(request, db)
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        # Validate recipient exists
+        from .models.user import User
+        recipient = db.query(User).filter(User.id == recipient_id).first()
+        if not recipient:
+            raise HTTPException(status_code=404, detail="Recipient not found")
+        
+        # Validate audio file
+        if not audio.content_type or not audio.content_type.startswith('audio/'):
+            raise HTTPException(status_code=400, detail="Invalid audio file")
+        
+        # Create uploads directory if it doesn't exist
+        upload_dir = Path("app/static/uploads/voice")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save audio file temporarily
+        temp_filename = f"temp_{uuid.uuid4().hex}.webm"
+        temp_path = upload_dir / temp_filename
+        
+        content = await audio.read()
+        with open(temp_path, "wb") as temp_file:
+            temp_file.write(content)
+        
+        try:
+            # Process voice message using voice service
+            from .services.voice_service import voice_service
+            result = await voice_service.process_voice_message(
+                audio_file_path=str(temp_path),
+                language=language,
+                sender_id=current_user.id,
+                recipient_id=recipient_id,
+                db=db
+            )
+            
+            # Broadcast message via WebSocket
+            from .core.chat_manager import chat_manager
+            message_data = {
+                "type": "message",
+                "message_type": "voice",
+                "sender": {
+                    "id": current_user.id,
+                    "name": current_user.full_name or current_user.email
+                },
+                "original_text": result["transcribed_text"],
+                "original_language": language,
+                "translations_cache": result["translations"],
+                "audio_urls": result["audio_urls"],
+                "audio_duration": result["duration"],
+                "timestamp": result["message"].timestamp.isoformat()
+            }
+            
+            # Send to both sender and recipient
+            await chat_manager.send_personal_message(json.dumps(message_data), current_user.id)
+            await chat_manager.send_personal_message(json.dumps(message_data), recipient_id)
+            
+            return {
+                "success": True,
+                "message_id": result["message"].id,
+                "transcribed_text": result["transcribed_text"],
+                "translations": result["translations"],
+                "audio_urls": result["audio_urls"],
+                "audio_duration": result["duration"]
+            }
+            
+        finally:
+            # Clean up temp file
+            if temp_path.exists():
+                os.unlink(temp_path)
+                
+    except Exception as e:
+        logger.error(f"Voice message upload error: {e}")
+        return {
+            "success": False,
+            "message_id": 0,
+            "transcribed_text": "",
+            "translations": {},
+            "audio_urls": {},
+            "error": str(e)
+        }
+
+
+@app.get("/api/voice/audio/{file_name}")
+async def serve_audio_file(file_name: str):
+    """
+    Serve audio files
+    Available at: GET /api/voice/audio/{file_name}
+    """
+    upload_dir = Path("app/static/uploads/voice")
+    file_path = upload_dir / file_name
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    return FileResponse(
+        path=str(file_path),
+        media_type="audio/mpeg",
+        filename=file_name
+    )
+
+
+@app.get("/api/voice/stats/{user_id}")
+async def get_voice_stats(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Get voice chat statistics for a user
+    Available at: GET /api/voice/stats/{user_id}
+    """
+    # Get current user from session
+    current_user = get_current_ui_user(request, db)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Check if requesting own stats
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    from .models.user import User
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    try:
+        voice_count = user.get_voice_message_count(db)
+        total_duration = user.get_total_voice_duration(db)
+        
+        return {
+            "user_id": user_id,
+            "total_voice_messages": voice_count,
+            "total_voice_duration": total_duration,
+            "average_message_duration": total_duration / voice_count if voice_count > 0 else 0
+        }
+    except Exception as e:
+        logger.error(f"Voice stats error: {e}")
+        return {
+            "user_id": user_id,
+            "total_voice_messages": 0,
+            "total_voice_duration": 0,
+            "average_message_duration": 0
+        }
+
+
+@app.get("/api/voice/test")
+async def test_voice_endpoint():
+    """
+    Test endpoint to verify voice API is working
+    Available at: GET /api/voice/test
+    """
+    try:
+        from .services.voice_service import voice_service, VOICE_LIBS_AVAILABLE
+        
+        return {
+            "status": "ok",
+            "voice_libraries_available": VOICE_LIBS_AVAILABLE,
+            "upload_directory_exists": Path("app/static/uploads/voice").exists(),
+            "message": "Voice chat API is ready!" if VOICE_LIBS_AVAILABLE else "Voice libraries not installed"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "voice_libraries_available": False,
+            "error": str(e)
+        }

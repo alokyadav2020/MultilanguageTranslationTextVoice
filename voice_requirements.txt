@@ -1,0 +1,15 @@
+# Additional requirements for voice chat functionality
+# Add these to your existing requirements.txt
+
+# Voice processing libraries
+speech-recognition==3.10.0
+gtts==2.3.2
+pydub==0.25.1
+webrtcvad==2.0.10
+openai-whisper>=20231117
+
+# Audio processing dependencies (for Linux compatibility)
+# Note: On Linux, also run:
+# sudo apt-get update
+# sudo apt-get install -y ffmpeg espeak espeak-data portaudio19-dev python3-dev
+# sudo apt-get install -y libavcodec-extra libavformat-dev libavutil-dev

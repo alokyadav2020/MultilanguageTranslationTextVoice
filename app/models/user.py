@@ -31,3 +31,26 @@ class User(Base):
 
     messages = relationship("Message", back_populates="sender", cascade="all,delete")
     memberships = relationship("ChatroomMember", back_populates="user", cascade="all,delete")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email={self.email})>"
+
+    def get_voice_message_count(self, db_session) -> int:
+        """Get count of voice messages sent by user"""
+        from .message import Message, MessageType
+        return db_session.query(Message).filter(
+            Message.sender_id == self.id,
+            Message.message_type == MessageType.voice
+        ).count()
+    
+    def get_total_voice_duration(self, db_session) -> float:
+        """Get total duration of voice messages sent by user"""
+        from .message import Message, MessageType
+        from sqlalchemy import func
+        
+        result = db_session.query(func.sum(Message.audio_duration)).filter(
+            Message.sender_id == self.id,
+            Message.message_type == MessageType.voice
+        ).scalar()
+        
+        return result or 0.0
