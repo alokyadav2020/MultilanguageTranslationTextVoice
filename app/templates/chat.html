@@ -22,11 +22,11 @@
       <div class="card-body p-0 d-flex flex-column" style="height:60vh;">
         <div id="messages" class="flex-grow-1 overflow-auto p-3 small bg-light"></div>
         <form id="chat-form" class="border-top p-2 d-flex gap-2">
-          <select id="input-language" class="form-select" style="width: 120px;">
+          <!-- <select id="input-language" class="form-select" style="width: 120px;">
             <option value="en" {{ 'selected' if current_user.preferred_language == 'en' else '' }}>EN</option>
             <option value="fr" {{ 'selected' if current_user.preferred_language == 'fr' else '' }}>FR</option>
             <option value="ar" {{ 'selected' if current_user.preferred_language == 'ar' else '' }}>AR</option>
-          </select>
+          </select> -->
           <input id="message-input" autocomplete="off" class="form-control" placeholder="Type a message" />
           <button class="btn btn-primary" type="submit">Send</button>
         </form>
@@ -47,7 +47,7 @@
   const box = document.getElementById('messages');
   
   // Initialize user language preference from the selected dropdown value
-  let userLanguage = document.getElementById('input-language').value || '{{ current_user.preferred_language }}' || 'en';
+  let userLanguage = document.getElementById('language-select').value || '{{ current_user.preferred_language }}' || 'en';
   
   let typingTimeout; // For typing indicator timing
   let typingIndicatorElement; // Track typing indicator
@@ -246,7 +246,7 @@
   document.getElementById('chat-form').addEventListener('submit', e=>{
     e.preventDefault();
     const inp=document.getElementById('message-input');
-    const inputLang=document.getElementById('input-language').value;
+    const inputLang=document.getElementById('language-select').value;
     const t=inp.value.trim();
     if(!t) return; 
     
@@ -322,31 +322,7 @@
   // Note: onlineStatusCheckInterval variable kept for compatibility but not used
 
   // Save user's language preference when changed (input language dropdown)
-  const languageSelect = document.getElementById('input-language');
-  languageSelect.addEventListener('change', function() {
-    const selectedLanguage = this.value;
-    
-    // Update current language for message display
-    userLanguage = selectedLanguage;
-    
-    // Reload chat history with new language preference
-    loadChatHistory();
-    
-    // Save preference to backend
-    fetch('/users/update-language', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ preferred_language: selectedLanguage })
-    }).catch(error => {
-      console.log('Language preference save failed:', error);
-      // Don't show error to user, just log it
-    });
-  });
-
-  // Save user's language preference when changed (display language dropdown)
+  // const languageSelect = document.getElementById('input-language');
   const displayLanguageSelect = document.getElementById('language-select');
   displayLanguageSelect.addEventListener('change', function() {
     const selectedLanguage = this.value;
@@ -371,12 +347,37 @@
     });
   });
 
-  // Cleanup on page unload
-  window.addEventListener('beforeunload', function() {
-    if (onlineStatusCheckInterval) {
-      clearInterval(onlineStatusCheckInterval);
-    }
-  });
+  // Save user's language preference when changed (display language dropdown)
+  // const displayLanguageSelect = document.getElementById('language-select');
+  // displayLanguageSelect.addEventListener('change', function() {
+  //   const selectedLanguage = this.value;
+    
+  //   // Update current language for message display
+  //   userLanguage = selectedLanguage;
+    
+  //   // Reload chat history with new language preference
+  //   loadChatHistory();
+    
+  //   // Save preference to backend
+  //   fetch('/users/update-language', {
+  //     method: 'POST',
+  //     headers: {
+  //       'Content-Type': 'application/json',
+  //       'Authorization': `Bearer ${token}`
+  //     },
+  //     body: JSON.stringify({ preferred_language: selectedLanguage })
+  //   }).catch(error => {
+  //     console.log('Language preference save failed:', error);
+  //     // Don't show error to user, just log it
+  //   });
+  // });
+
+  // // Cleanup on page unload
+  // window.addEventListener('beforeunload', function() {
+  //   if (onlineStatusCheckInterval) {
+  //     clearInterval(onlineStatusCheckInterval);
+  //   }
+  // });
 })();
 </script>
 {% endblock %}
