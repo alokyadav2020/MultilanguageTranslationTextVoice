@@ -48,6 +48,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Middleware to handle secure context for voice features
+@app.middleware("http")
+async def secure_context_middleware(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Add headers to indicate if secure context is available
+    if request.url.scheme == "https" or request.url.hostname in ["localhost", "127.0.0.1"]:
+        response.headers["X-Secure-Context"] = "true"
+    else:
+        response.headers["X-Secure-Context"] = "false"
+        response.headers["X-HTTPS-Upgrade"] = f"https://{request.url.hostname}:{request.url.port or 443}{request.url.path}"
+    
+    return response
+
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(chat_ws.router)

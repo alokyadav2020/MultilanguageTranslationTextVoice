@@ -781,7 +781,7 @@ class VoiceMessageService:
                     }
                 
                 # Step 2: Translate text
-                translated_text = await translation_service.translate_text(
+                translated_text = await translation_service.translate_text_async(
                     text=original_text,
                     source_lang=source_language,
                     target_lang=target_language

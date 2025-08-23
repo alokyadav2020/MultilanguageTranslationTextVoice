@@ -150,6 +150,7 @@ class VoiceCall {
             callSummaryDuration: document.getElementById('call-summary-duration'),
             callEndReason: document.getElementById('call-end-reason'),
             callAgainBtn: document.getElementById('call-again-btn'),
+            closeWindowBtn: document.getElementById('close-window-btn'),
             
             // Audio elements
             localAudio: document.getElementById('local-audio'),
@@ -195,11 +196,36 @@ class VoiceCall {
         });
         this.elements.endCallBtn?.addEventListener('click', () => {
             console.log('📞 End call button clicked');
+            // Immediate visual feedback
+            if (this.elements.endCallBtn) {
+                this.elements.endCallBtn.style.backgroundColor = '#dc3545';
+                this.elements.endCallBtn.style.opacity = '0.7';
+            }
             this.endCall();
         });
+        
+        // Double-click end call for immediate close
+        this.elements.endCallBtn?.addEventListener('dblclick', () => {
+            console.log('📞 End call button double-clicked - force close');
+            this.callState = 'ended';
+            this.closeWindow();
+        });
+        
         this.elements.closeCallBtn?.addEventListener('click', () => {
             console.log('❌ Close call button clicked');
+            // Immediate visual feedback
+            if (this.elements.closeCallBtn) {
+                this.elements.closeCallBtn.style.backgroundColor = '#dc3545';
+                this.elements.closeCallBtn.style.opacity = '0.7';
+            }
             this.endCall();
+        });
+        
+        // Double-click close call for immediate close
+        this.elements.closeCallBtn?.addEventListener('dblclick', () => {
+            console.log('❌ Close call button double-clicked - force close');
+            this.callState = 'ended';
+            this.closeWindow();
         });
         this.elements.minimizeBtn?.addEventListener('click', () => {
             console.log('➖ Minimize button clicked');
@@ -258,6 +284,25 @@ class VoiceCall {
         
         // Call ended modal
         this.elements.callAgainBtn?.addEventListener('click', () => this.callAgain());
+        this.elements.closeWindowBtn?.addEventListener('click', () => {
+            console.log('🚪 Close window button clicked');
+            this.closeWindow();
+        });
+        
+        // Modal close buttons
+        document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                console.log('📋 Modal close button clicked');
+                setTimeout(() => this.closeWindow(), 500); // Short delay for modal to close
+            });
+        });
+        
+        // Add keyboard shortcut to close window
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.callState === 'ended') {
+                this.closeWindow();
+            }
+        });
         
         // Rating stars
         document.querySelectorAll('.star').forEach(star => {
@@ -599,7 +644,10 @@ class VoiceCall {
      */
     async endCall() {
         try {
+            console.log('📞 endCall() method called, current state:', this.callState);
+            
             if (this.callState === 'ending' || this.callState === 'ended') {
+                console.log('⏹️ Call already ending/ended, skipping...');
                 return;
             }
             
@@ -608,32 +656,56 @@ class VoiceCall {
             this.callState = 'ending';
             this.updateCallStatus('Ending call...');
             
+            // Disable end call buttons to prevent multiple clicks
+            if (this.elements.endCallBtn) {
+                this.elements.endCallBtn.disabled = true;
+            }
+            if (this.elements.closeCallBtn) {
+                this.elements.closeCallBtn.disabled = true;
+            }
+            
             // Stop audio
             this.stopRingtone();
             this.stopRingback();
             
+            // Stop voice translation if active
+            if (this.translationEnabled) {
+                this.stopVoiceTranslation();
+            }
+            
             // Close WebRTC
-            this.webrtc.close();
+            if (this.webrtc) {
+                this.webrtc.close();
+            }
             
             // Calculate duration
             const duration = this.startTime ? Date.now() - this.startTime : 0;
             
             // Send end call to server
-            const response = await fetch(`${this.apiBase}/end/${this.callId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.token}`
-                },
-                body: JSON.stringify({
-                    end_reason: 'normal',
-                    quality_score: this.getCallRating(),
-                    connection_quality: this.webrtc.getConnectionQuality()
-                })
-            });
-            
-            if (!response.ok) {
-                console.warn('⚠️ Failed to notify server of call end');
+            try {
+                console.log('📤 Sending end call request to server...');
+                const response = await fetch(`${this.apiBase}/end/${this.callId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify({
+                        end_reason: 'normal',
+                        quality_score: this.getCallRating(),
+                        connection_quality: this.webrtc ? this.webrtc.getConnectionQuality() : null
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Server confirmed call end:', result);
+                } else {
+                    console.warn('⚠️ Server responded with error:', response.status, response.statusText);
+                }
+            } catch (apiError) {
+                console.warn('⚠️ Failed to notify server of call end:', apiError);
+                // Continue with local cleanup even if server notification fails
             }
             
             this.callState = 'ended';
@@ -1007,32 +1079,17 @@ class VoiceCall {
         console.log('🔊 Received translated audio:', message);
         
         try {
-            if (!message.audio_data) {
-                console.warn('No audio data in translated audio message');
+            if (!message.audio_url) {
+                console.warn('No audio URL in translated audio message');
                 return;
             }
             
-            // Convert base64 audio data to blob
-            const audioData = atob(message.audio_data);
-            const audioArray = new Uint8Array(audioData.length);
-            for (let i = 0; i < audioData.length; i++) {
-                audioArray[i] = audioData.charCodeAt(i);
-            }
-            
-            const audioBlob = new Blob([audioArray], { type: 'audio/wav' });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            
-            // Create and play audio element
-            const audio = new Audio(audioUrl);
+            // Create and play audio element using the URL
+            const audio = new Audio(message.audio_url);
             audio.volume = 0.8; // Slightly lower volume for translations
-            
-            audio.onended = () => {
-                URL.revokeObjectURL(audioUrl);
-            };
             
             audio.onerror = (error) => {
                 console.error('❌ Failed to play translated audio:', error);
-                URL.revokeObjectURL(audioUrl);
             };
             
             // Play the translated audio
@@ -1314,6 +1371,8 @@ class VoiceCall {
      * Show call ended modal
      */
     showCallEndedModal(reason, duration = 0) {
+        console.log('📋 Showing call ended modal:', reason, duration);
+        
         if (this.durationInterval) {
             clearInterval(this.durationInterval);
             this.durationInterval = null;
@@ -1331,14 +1390,53 @@ class VoiceCall {
             this.elements.callSummaryDuration.textContent = `Duration: ${formatted}`;
         }
         
-        // Show modal
-        const modal = new bootstrap.Modal(this.elements.callEndedModal);
-        modal.show();
+        // Show modal if available
+        if (this.elements.callEndedModal) {
+            try {
+                const modal = new bootstrap.Modal(this.elements.callEndedModal);
+                modal.show();
+                console.log('✅ Call ended modal displayed');
+            } catch (error) {
+                console.error('❌ Failed to show modal:', error);
+                // Fallback to immediate close
+                this.closeWindow();
+                return;
+            }
+        } else {
+            console.warn('⚠️ Call ended modal not found, closing immediately');
+            this.closeWindow();
+            return;
+        }
         
-        // Auto-close window after 30 seconds
+        // Auto-close window after 5 seconds (reduced from 30)
         setTimeout(() => {
-            window.close();
-        }, 30000);
+            console.log('⏰ Auto-closing window after 5 seconds');
+            this.closeWindow();
+        }, 5000);
+    }
+
+    /**
+     * Close the call window safely
+     */
+    closeWindow() {
+        try {
+            // Cleanup before closing
+            this.cleanup();
+            
+            // Try different methods to close the window
+            if (window.opener) {
+                window.close();
+            } else if (window.parent !== window) {
+                window.parent.postMessage('closeVoiceCall', '*');
+            } else {
+                // Last resort - redirect back to chat
+                window.location.href = '/chat';
+            }
+        } catch (error) {
+            console.error('❌ Error closing window:', error);
+            // Final fallback
+            window.location.href = '/chat';
+        }
     }
 
     /**
