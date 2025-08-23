@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from typing import Optional
 from ..core.database import get_db
 from ..core.security import decode_access_token
 from ..models.user import User
@@ -15,3 +16,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+async def get_user_from_websocket_token(token: str, db: Session) -> Optional[User]:
+    """Get user from WebSocket token without raising exceptions"""
+    try:
+        payload = decode_access_token(token)
+        if not payload or "sub" not in payload:
+            return None
+        user = db.query(User).filter(User.email == payload["sub"]).first()
+        return user
+    except Exception:
+        return None

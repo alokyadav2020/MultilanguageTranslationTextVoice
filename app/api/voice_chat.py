@@ -326,3 +326,60 @@ async def get_or_create_direct_chatroom(user1_id: int, user2_id: int, db: Sessio
     db.commit()
     
     return new_chatroom.id
+
+@router.post("/translate-realtime")
+async def translate_realtime_voice(
+    audio: UploadFile = File(...),
+    language: str = Form(...),
+    target_language: str = Form(...),
+    call_id: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Real-time voice translation for voice calls
+    - Speech-to-text using Whisper
+    - Translation using local models
+    - Text-to-speech for translated audio
+    """
+    try:
+        # Validate languages
+        supported_languages = ['en', 'fr', 'ar']
+        if language not in supported_languages or target_language not in supported_languages:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported language. Supported: {supported_languages}"
+            )
+        
+        if language == target_language:
+            raise HTTPException(status_code=400, detail="Source and target languages cannot be the same")
+        
+        # Read audio data
+        audio_data = await audio.read()
+        if len(audio_data) == 0:
+            raise HTTPException(status_code=400, detail="Empty audio file")
+        
+        print(f"🌐 Real-time translation: {language} → {target_language} ({len(audio_data)} bytes)")
+        
+        # Process with voice service
+        result = await voice_service.translate_realtime(
+            audio_data=audio_data,
+            source_language=language,
+            target_language=target_language,
+            user_id=current_user.id,
+            call_id=call_id
+        )
+        
+        return {
+            "success": True,
+            "original_text": result.get("original_text"),
+            "translated_text": result.get("translated_text"),
+            "translated_audio_url": result.get("translated_audio_url"),
+            "source_language": language,
+            "target_language": target_language,
+            "processing_time": result.get("processing_time", 0)
+        }
+        
+    except Exception as e:
+        print(f"❌ Real-time translation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")

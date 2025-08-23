@@ -169,6 +169,52 @@
   font-style: italic;
   margin-top: 2px;
 }
+
+/* Voice Call UI Styles */
+.call-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.call-button {
+  background: rgba(40, 167, 69, 0.2);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  color: #28a745;
+  border-radius: 25px;
+  padding: 8px 16px;
+  transition: all 0.3s ease;
+}
+
+.call-button:hover {
+  background: rgba(40, 167, 69, 0.3);
+  color: #28a745;
+  transform: translateY(-1px);
+}
+
+.call-button.active {
+  background: rgba(40, 167, 69, 0.9);
+  color: white;
+}
+
+.call-status {
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.2);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 0.85rem;
+  color: #28a745;
+}
+
+.call-indicator {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
 </style>
 {% endblock %}
 
@@ -178,7 +224,7 @@
     <div class="card shadow-sm">
       <div class="card-header d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center gap-2">
-          <strong>Chat with {{ remote_user.full_name or remote_user.email }}</strong>
+          <strong>Chat + Voice Calls with {{ remote_user.full_name or remote_user.email }}</strong>
           <small id="user-status" class="badge bg-secondary">
             <i class="fas fa-circle me-1"></i>Checking...
           </small>
@@ -189,6 +235,20 @@
             <option value="fr" {{ 'selected' if current_user.preferred_language == 'fr' else '' }}>Français</option>
             <option value="ar" {{ 'selected' if current_user.preferred_language == 'ar' else '' }}>العربية</option>
           </select>
+          
+          <!-- Voice Call Controls -->
+          <div class="call-controls">
+            <button id="voice-call-btn" class="btn call-button" title="Start Voice Call">
+              <i class="fas fa-phone"></i> <span id="callBtnText">Call</span>
+            </button>
+            <button id="cleanup-calls-btn" class="btn btn-sm btn-outline-warning ml-2" title="Reset Call State" style="display: inline-block;">
+              <i class="fas fa-broom"></i> Reset
+            </button>
+            <div id="call-status" class="call-status d-none">
+              <i class="fas fa-phone call-indicator"></i> <span id="callStatusText">Ready for voice call</span>
+            </div>
+          </div>
+          
           <a class="btn btn-sm btn-outline-secondary" href="/">Back</a>
         </div>
       </div>
@@ -863,18 +923,424 @@
   // Initialize voice recording functionality
   initializeVoiceRecording();
 
+  // Initialize voice call functionality
+  let voiceCallSocket = null;
+  let isCallActive = false;
+  let callWindow = null;
+
+  function initializeVoiceCall() {
+    const voiceCallBtn = document.getElementById('voice-call-btn');
+    const cleanupBtn = document.getElementById('cleanup-calls-btn');
+    
+    if (voiceCallBtn) {
+      voiceCallBtn.addEventListener('click', function() {
+        toggleVoiceCall();
+      });
+    }
+    
+    if (cleanupBtn) {
+      cleanupBtn.addEventListener('click', function() {
+        forceCleanupCalls();
+      });
+    }
+
+    // Initialize voice call WebSocket
+    if (!voiceCallSocket) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      voiceCallSocket = new WebSocket(`${protocol}//${window.location.host}/api/voice-call/ws?token=${token}`);
+      
+      voiceCallSocket.onopen = () => {
+        console.log('Voice call WebSocket connected');
+        updateCallStatus('Ready for voice call');
+        
+        // Auto-cleanup stale calls on connection
+        setTimeout(() => {
+          console.log('🧹 Auto-checking for stale calls...');
+          checkAndCleanupStaleCalls();
+        }, 1000);
+      };
+      
+      voiceCallSocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleVoiceCallMessage(data);
+      };
+      
+      voiceCallSocket.onclose = () => {
+        console.log('Voice call WebSocket disconnected');
+        updateCallStatus('Voice call disconnected');
+      };
+      
+      voiceCallSocket.onerror = (error) => {
+        console.error('Voice call WebSocket error:', error);
+        updateCallStatus('Voice call error');
+      };
+    }
+  }
+
+  // Handle voice call messages
+  function handleVoiceCallMessage(data) {
+    console.log('📞 Voice call message received:', data);
+    
+    switch (data.type) {
+      case 'call_initiated':
+        console.log('✅ Call initiated successfully');
+        updateCallStatus('Call initiated, opening window...', true);
+        openVoiceCallWindow(data.call_id);
+        break;
+      
+      case 'incoming_call':
+        console.log('📞 Incoming call from:', data.caller_name);
+        updateCallStatus(`Incoming call from ${data.caller_name || 'User'}`);
+        
+        // Show more user-friendly notification
+        const accept = confirm(`📞 Incoming call from ${data.caller_name || 'User'}\n\nWould you like to accept this call?`);
+        if (accept) {
+          acceptCall(data.call_id);
+        } else {
+          declineCall(data.call_id);
+        }
+        break;
+      
+      case 'call_answered':
+        console.log('✅ Call answered successfully');
+        updateCallStatus('Call answered - connecting...', true);
+        
+        // Update button state for caller
+        const btn = document.getElementById('voice-call-btn');
+        const btnText = document.getElementById('callBtnText');
+        btn.className = 'btn call-button active';
+        btnText.textContent = 'In Call';
+        isCallActive = true;
+        break;
+      
+      case 'call_declined':
+        console.log('❌ Call was declined');
+        updateCallStatus('Call declined');
+        alert('The call was declined by the other user.');
+        resetCallButton();
+        break;
+      
+      case 'call_ended':
+        updateCallStatus('Call ended');
+        resetCallButton();
+        if (callWindow && !callWindow.closed) {
+          callWindow.close();
+        }
+        break;
+      
+      default:
+        console.log('Unknown voice call message type:', data.type);
+    }
+  }
+
+  // Toggle voice call
+  function toggleVoiceCall() {
+    if (isCallActive) {
+      endVoiceCall();
+    } else {
+      initiateVoiceCall();
+    }
+  }
+
+  // Initiate voice call
+  async function initiateVoiceCall() {
+    try {
+      console.log('🚀 Initiating voice call to user:', otherUserId);
+      
+      // Update button state
+      const voiceCallBtn = document.getElementById('voice-call-btn');
+      const btnText = document.getElementById('callBtnText');
+      voiceCallBtn.disabled = true;
+      btnText.textContent = 'Calling...';
+      
+      updateCallStatus('Initiating call...');
+      
+      // Send call initiation request
+      const response = await fetch('/api/voice-call/initiate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          callee_id: otherUserId,
+          call_type: 'voice',
+          message: 'Voice call request'
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to initiate call');
+      }
+      
+      const callData = await response.json();
+      console.log('✅ Call initiated:', callData);
+      
+      // WebSocket will handle the call_initiated message
+      
+    } catch (error) {
+      console.error('❌ Failed to initiate voice call:', error);
+      alert('Failed to start voice call: ' + error.message);
+      resetCallButton();
+      
+      // Show cleanup button for call state issues
+      if (error.message.includes('already in a call') || error.message.includes('busy')) {
+        document.getElementById('cleanup-calls-btn').style.display = 'inline-block';
+      }
+    }
+  }
+
+  // End voice call
+  function endVoiceCall() {
+    if (voiceCallSocket && voiceCallSocket.readyState === WebSocket.OPEN) {
+      voiceCallSocket.send(JSON.stringify({
+        type: 'end_call'
+      }));
+    }
+    
+    resetCallButton();
+    updateCallStatus('Call ended');
+    
+    // Close call window if open
+    if (callWindow && !callWindow.closed) {
+      callWindow.close();
+    }
+  }
+
+  // Accept incoming call
+  async function acceptCall(callId) {
+    try {
+      console.log('📞 Accepting call:', callId);
+      updateCallStatus('Accepting call...');
+      
+      const response = await fetch(`/api/voice-call/answer/${callId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          sdp_answer: null // Will be set up in the call window
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Call accepted:', result);
+        updateCallStatus('Call accepted, opening window...');
+        
+        // Update button state
+        const btn = document.getElementById('voice-call-btn');
+        const btnText = document.getElementById('callBtnText');
+        btn.className = 'btn call-button active';
+        btnText.textContent = 'In Call';
+        isCallActive = true;
+        
+        // Open call window
+        openVoiceCallWindow(callId);
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to accept call');
+      }
+    } catch (error) {
+      console.error('❌ Failed to accept call:', error);
+      updateCallStatus('Failed to accept call');
+      alert('Failed to accept call: ' + error.message);
+      resetCallButton();
+    }
+  }
+
+  // Decline incoming call
+  async function declineCall(callId) {
+    try {
+      await fetch(`/api/voice-call/decline/${callId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (error) {
+      console.error('Failed to decline call:', error);
+    }
+  }
+
+  // Clear call cache
+  function clearCallCache() {
+    try {
+      // Clear browser cache related to voice calls
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          names.forEach(name => {
+            if (name.includes('call') || name.includes('voice')) {
+              caches.delete(name);
+            }
+          });
+        });
+      }
+      
+      // Clear session storage
+      sessionStorage.removeItem('currentCall');
+      sessionStorage.removeItem('callState');
+      
+      // Clear local storage call-related items
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes('call') || key.includes('voice')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      console.log('📞 Call cache cleared');
+    } catch (error) {
+      console.log('Cache clearing failed:', error);
+    }
+  }
+
+  // Force cleanup user's call state (for debugging)
+  async function forceCleanupCalls() {
+    try {
+      console.log('🧹 Force cleaning up call state...');
+      updateCallStatus('Cleaning up calls...');
+      
+      const response = await fetch('/api/voice-call/force-cleanup', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Force cleanup completed:', result);
+        alert(`Cleanup completed: ${result.message}`);
+        
+        // Reset UI state
+        resetCallButton();
+        updateCallStatus('Ready for voice call');
+        clearCallCache();
+        
+        // Hide cleanup button after successful cleanup
+        document.getElementById('cleanup-calls-btn').style.display = 'none';
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to cleanup calls');
+      }
+    } catch (error) {
+      console.error('❌ Failed to cleanup calls:', error);
+      alert('Failed to cleanup calls: ' + error.message);
+      updateCallStatus('Cleanup failed');
+    }
+  }
+
+  // Auto-check and cleanup stale calls (silent)
+  async function checkAndCleanupStaleCalls() {
+    try {
+      console.log('🔍 Checking for stale calls...');
+      
+      const response = await fetch('/api/voice-call/force-cleanup', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.message && !result.message.includes('0 active calls')) {
+          console.log('🧹 Auto-cleanup completed:', result.message);
+          resetCallButton();
+          clearCallCache();
+        }
+      }
+    } catch (error) {
+      console.log('Auto-cleanup check failed (non-critical):', error);
+    }
+  }
+
+  // Reset call button
+  function resetCallButton() {
+    const btn = document.getElementById('voice-call-btn');
+    const btnText = document.getElementById('callBtnText');
+    btn.className = 'btn call-button';
+    btnText.textContent = 'Call';
+    btn.disabled = false;
+    isCallActive = false;
+    
+    // Clear call cache when resetting
+    clearCallCache();
+  }
+
+  // Update call status
+  function updateCallStatus(message, inCall = false) {
+    const statusEl = document.getElementById('call-status');
+    const textEl = document.getElementById('callStatusText');
+    
+    if (statusEl && textEl) {
+      if (inCall || message === 'Ready for voice call') {
+        statusEl.classList.remove('d-none');
+      } else if (message === 'Call ended' || message === 'Call declined') {
+        setTimeout(() => {
+          statusEl.classList.add('d-none');
+        }, 3000);
+      }
+      textEl.textContent = message;
+    }
+  }
+
+  // Open voice call window
+  function openVoiceCallWindow(callId) {
+    try {
+      console.log('📞 Opening voice call window for call:', callId);
+      
+      // Clear any existing call cache before opening new call
+      clearCallCache();
+      
+      // Include token in URL parameters for authentication
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+      const windowFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no';
+      callWindow = window.open(`/voice-call?call_id=${callId}&t=${Date.now()}${tokenParam}`, 'voiceCall', windowFeatures);
+      
+      if (!callWindow) {
+        throw new Error('Failed to open call window. Please allow popups for this site.');
+      }
+
+      callWindow.focus();
+      isCallActive = true;
+      updateCallStatus('Voice call window opened', true);
+      
+      // Update button state
+      const btn = document.getElementById('voice-call-btn');
+      const btnText = document.getElementById('callBtnText');
+      btn.className = 'btn call-button active';
+      btnText.textContent = 'End Call';
+      
+      // Monitor window close
+      const checkClosed = setInterval(() => {
+        if (callWindow.closed) {
+          console.log('📞 Call window was closed');
+          clearInterval(checkClosed);
+          endVoiceCall();
+        }
+      }, 1000);
+      
+      console.log('✅ Voice call window opened successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to open voice call window:', error);
+      alert('Failed to open voice call window: ' + error.message);
+      resetCallButton();
+    }
+  }
+
+  // Initialize voice call functionality
+  initializeVoiceCall();
+
   // Check browser compatibility for voice recording
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     document.getElementById('voice-record-btn').style.display = 'none';
     console.warn('Voice recording not supported in this browser');
   }
 
-  // // Cleanup on page unload
-  // window.addEventListener('beforeunload', function() {
-  //   if (onlineStatusCheckInterval) {
-  //     clearInterval(onlineStatusCheckInterval);
-  //   }
-  // });
 })();
 </script>
 {% endblock %}

@@ -15,7 +15,7 @@ from .core.database import engine, Base, get_db
 from .core.migrate import run_startup_migrations
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .models.user import User
-from .api import auth, users, chat_ws, translation, voice_chat
+from .api import auth, users, chat_ws, translation, voice_chat, voice_call
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -53,12 +53,15 @@ app.include_router(users.router)
 app.include_router(chat_ws.router)
 app.include_router(translation.router)
 app.include_router(voice_chat.router)
+app.include_router(voice_call.router)
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services and preload models for better performance."""
     from .services.translation import translation_service
+    from .services.call_manager import start_heartbeat_task
+    import asyncio
     
     logger.info("🚀 Starting translation service optimization...")
     
@@ -78,6 +81,11 @@ async def startup_event():
     # thread.start()
     
     logger.info("✅ Translation service startup complete")
+    
+    # Start call manager heartbeat task
+    logger.info("📞 Starting call manager heartbeat...")
+    asyncio.create_task(start_heartbeat_task())
+    logger.info("✅ Call manager heartbeat started")
 
 
 @app.get("/_debug/session")
@@ -150,7 +158,7 @@ async def chat_page(
             "current_user": current_user,
             "remote_user": remote_user,
             "token": token,
-            "title": f"Chat with {remote_user.full_name or remote_user.email}",
+            "title": f"Chat + Voice Calls with {remote_user.full_name or remote_user.email}",
         },
     )
     # Add cache control headers for authenticated content
@@ -158,6 +166,7 @@ async def chat_page(
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -285,6 +294,44 @@ async def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     
     # Add headers to prevent caching of authenticated content
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    
+    return response
+
+
+@app.get("/voice-call", response_class=HTMLResponse)
+async def voice_call_page(
+    request: Request, 
+    call_id: str = None,
+    incoming: bool = False,
+    participant: str = None,
+    user: User | None = Depends(get_current_ui_user)
+):
+    """Voice call window page"""
+    if not user:
+        return RedirectResponse("/login", 302)
+    
+    # Get token for WebSocket authentication
+    token = request.session.get("token")
+    if not token:
+        return RedirectResponse("/login", 302)
+    
+    response = templates.TemplateResponse(
+        "voice_call.html",
+        {
+            "request": request,
+            "user": user,
+            "title": f"Voice Call - {participant or 'Unknown'}",
+            "call_id": call_id,
+            "incoming": incoming,
+            "participant": participant,
+            "token": token
+        }
+    )
+    
+    # Prevent caching for security
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -478,3 +525,10 @@ async def test_voice_endpoint():
             "voice_libraries_available": False,
             "error": str(e)
         }
+
+
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000)

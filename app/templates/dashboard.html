@@ -28,7 +28,14 @@
                   <i class="fas fa-circle me-1"></i>Checking...
                 </small>
               </div>
-              <a class="btn btn-sm btn-outline-primary" href="/chat/{{ u.id }}">Chat</a>
+              <div class="btn-group btn-group-sm">
+                <a class="btn btn-outline-primary" href="/chat/{{ u.id }}">
+                  <i class="fas fa-comment"></i> Chat + Voice Calls
+                </a>
+                <button class="btn btn-outline-warning" onclick="initiateVoiceCall({{ u.id }}, '{{ u.full_name or u.email }}')">
+                  <i class="fas fa-phone"></i> Quick Call
+                </button>
+              </div>
             </li>
           {% endfor %}
         {% else %}
@@ -109,6 +116,211 @@ document.addEventListener('DOMContentLoaded', function() {
     updateOnlineStatus(); // Only call once on page load
     // Removed setInterval - WebSocket connections handle real-time updates
 });
+
+// Voice Call JavaScript
+let voiceCallSocket = null;
+let callWindow = null;
+
+// Initialize voice call functionality
+function initializeVoiceCall() {
+  if (!voiceCallSocket) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const token = localStorage.getItem('token');
+    voiceCallSocket = new WebSocket(`${protocol}//${window.location.host}/api/voice-call/ws?token=${token}`);
+    
+    voiceCallSocket.onopen = () => {
+      console.log('Voice call WebSocket connected');
+    };
+    
+    voiceCallSocket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      handleVoiceCallMessage(data);
+    };
+    
+    voiceCallSocket.onclose = () => {
+      console.log('Voice call WebSocket disconnected');
+      setTimeout(initializeVoiceCall, 3000); // Reconnect after 3 seconds
+    };
+    
+    voiceCallSocket.onerror = (error) => {
+      console.error('Voice call WebSocket error:', error);
+    };
+  }
+}
+
+// Handle incoming voice call messages
+function handleVoiceCallMessage(data) {
+  switch (data.type) {
+    case 'incoming_call':
+      showIncomingCallNotification(data.call_id, data.caller_name);
+      break;
+    case 'call_ended':
+    case 'call_declined':
+      hideIncomingCallNotification();
+      break;
+    default:
+      console.log('Unknown voice call message type:', data.type);
+  }
+}
+
+// Initiate a voice call
+function initiateVoiceCall(userId, userName) {
+  if (!voiceCallSocket || voiceCallSocket.readyState !== WebSocket.OPEN) {
+    initializeVoiceCall();
+    setTimeout(() => initiateVoiceCall(userId, userName), 1000);
+    return;
+  }
+
+  // Open voice call window
+  const windowFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no';
+  callWindow = window.open(`/voice-call?target_user=${userId}`, 'voiceCall', windowFeatures);
+  
+  if (!callWindow) {
+    alert('Please allow popups for voice calls to work');
+    return;
+  }
+
+  // Focus the call window
+  callWindow.focus();
+
+  console.log(`Initiating voice call with user ${userId} (${userName})`);
+}
+
+// Show incoming call notification
+function showIncomingCallNotification(callId, callerName) {
+  // Remove any existing notification
+  hideIncomingCallNotification();
+  
+  const notification = document.createElement('div');
+  notification.id = 'incoming-call-notification';
+  notification.className = 'incoming-call-notification';
+  notification.innerHTML = `
+    <div class="call-notification-content">
+      <div class="call-info">
+        <i class="fas fa-phone-alt call-icon"></i>
+        <div>
+          <h5 class="mb-1">Incoming Call</h5>
+          <p class="mb-0">${callerName}</p>
+        </div>
+      </div>
+      <div class="call-actions">
+        <button class="btn btn-success btn-sm me-2" onclick="answerIncomingCall('${callId}')">
+          <i class="fas fa-phone"></i> Answer
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="declineIncomingCall('${callId}')">
+          <i class="fas fa-phone-slash"></i> Decline
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Auto-hide after 30 seconds
+  setTimeout(() => {
+    declineIncomingCall(callId);
+  }, 30000);
+}
+
+// Answer incoming call
+function answerIncomingCall(callId) {
+  hideIncomingCallNotification();
+  
+  // Open voice call window
+  const windowFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no';
+  callWindow = window.open(`/voice-call?call_id=${callId}`, 'voiceCall', windowFeatures);
+  
+  if (!callWindow) {
+    alert('Please allow popups for voice calls to work');
+    return;
+  }
+
+  callWindow.focus();
+}
+
+// Decline incoming call
+function declineIncomingCall(callId) {
+  hideIncomingCallNotification();
+  
+  if (voiceCallSocket && voiceCallSocket.readyState === WebSocket.OPEN) {
+    voiceCallSocket.send(JSON.stringify({
+      type: 'decline_call',
+      call_id: callId
+    }));
+  }
+}
+
+// Hide incoming call notification
+function hideIncomingCallNotification() {
+  const notification = document.getElementById('incoming-call-notification');
+  if (notification) {
+    notification.remove();
+  }
+}
+
+// Initialize voice call when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize existing dashboard functionality first
+  setTimeout(initializeVoiceCall, 1000);
+});
 </script>
+
+<!-- Voice Call Notification Styles -->
+<style>
+  .incoming-call-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: white;
+    border: 2px solid #28a745;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    z-index: 9999;
+    min-width: 300px;
+    animation: slideIn 0.3s ease-out;
+  }
+
+  .call-notification-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .call-info {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+  }
+
+  .call-icon {
+    font-size: 24px;
+    color: #28a745;
+    margin-right: 15px;
+    animation: pulse 1s infinite;
+  }
+
+  .call-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+</style>
 
 {% endblock %}

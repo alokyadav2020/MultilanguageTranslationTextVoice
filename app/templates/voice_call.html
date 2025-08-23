@@ -1,0 +1,370 @@
+<!-- filepath: app/templates/voice_call.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Call - Translation App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', path='css/voice_call.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div id="voice-call-container" class="voice-call-container">
+        <!-- Call Header -->
+        <div class="call-header">
+            <div class="call-info">
+                <div class="participant-avatar">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="participant-details">
+                    <h3 id="participant-name">Loading...</h3>
+                    <p id="call-status" class="call-status">Connecting...</p>
+                    <p id="call-duration" class="call-duration">00:00</p>
+                </div>
+            </div>
+            <div class="call-actions-top">
+                <button id="minimize-btn" class="btn btn-sm btn-outline-light" title="Minimize">
+                    <i class="fas fa-minus"></i>
+                </button>
+                <button id="close-call-btn" class="btn btn-sm btn-danger" title="End Call">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Call Content Area -->
+        <div class="call-content">
+            <!-- Audio Visualization -->
+            <div class="audio-visualization">
+                <div class="waveform-container">
+                    <canvas id="waveform-canvas"></canvas>
+                    <div class="volume-indicators">
+                        <div class="volume-bar my-volume">
+                            <label>You</label>
+                            <div class="volume-level" id="my-volume"></div>
+                        </div>
+                        <div class="volume-bar their-volume">
+                            <label>Them</label>
+                            <div class="volume-level" id="their-volume"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Sidebar (Collapsible) -->
+            <div id="chat-sidebar" class="chat-sidebar collapsed">
+                <div class="chat-header">
+                    <h5><i class="fas fa-comments"></i> Chat</h5>
+                    <button id="toggle-chat" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-angle-left"></i>
+                    </button>
+                </div>
+                <div class="chat-messages" id="chat-messages">
+                    <!-- Chat messages will be dynamically loaded here -->
+                </div>
+                <div class="chat-input-container">
+                    <div class="input-group">
+                        <select id="message-language" class="form-select message-language">
+                            <option value="en">English</option>
+                            <option value="fr">Français</option>
+                            <option value="ar">العربية</option>
+                        </select>
+                        <input type="text" id="chat-input" class="form-control" placeholder="Type a message..." maxlength="500">
+                        <button id="send-message" class="btn btn-primary" type="button">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="form-check form-check-sm mt-2">
+                        <input class="form-check-input" type="checkbox" id="auto-translate" checked>
+                        <label class="form-check-label" for="auto-translate">
+                            Auto-translate messages
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Call Controls -->
+        <div class="call-controls">
+            <div class="control-group">
+                <!-- Mute Button -->
+                <button id="mute-btn" class="control-btn mute-btn" title="Mute/Unmute">
+                    <i class="fas fa-microphone"></i>
+                    <span class="control-label">Mute</span>
+                </button>
+
+                <!-- Speaker Button -->
+                <button id="speaker-btn" class="control-btn speaker-btn" title="Speaker">
+                    <i class="fas fa-volume-up"></i>
+                    <span class="control-label">Speaker</span>
+                </button>
+
+                <!-- Chat Toggle -->
+                <button id="chat-toggle-btn" class="control-btn chat-btn" title="Toggle Chat">
+                    <i class="fas fa-comment-alt"></i>
+                    <span class="control-label">Chat</span>
+                </button>
+
+                <!-- End Call Button -->
+                <button id="end-call-btn" class="control-btn end-call-btn" title="End Call">
+                    <i class="fas fa-phone-slash"></i>
+                    <span class="control-label">End Call</span>
+                </button>
+            </div>
+
+            <!-- Additional Controls -->
+            <div class="additional-controls">
+                <div class="volume-control">
+                    <label for="volume-slider">Volume:</label>
+                    <input type="range" id="volume-slider" min="0" max="100" value="80" class="form-range">
+                </div>
+                
+                <!-- Real-time Translation Controls -->
+                <div class="translation-controls">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="enable-translation">
+                        <label class="form-check-label" for="enable-translation">
+                            <i class="fas fa-language"></i> Voice Translation
+                        </label>
+                    </div>
+                    <div class="translation-settings" id="translation-settings" style="display: none;">
+                        <div class="row">
+                            <div class="col-6">
+                                <label for="my-language">My Language:</label>
+                                <select id="my-language" class="form-select form-select-sm">
+                                    <option value="en">English</option>
+                                    <option value="fr">Français</option>
+                                    <option value="ar">العربية</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label for="translate-to">Translate to:</label>
+                                <select id="translate-to" class="form-select form-select-sm">
+                                    <option value="en">English</option>
+                                    <option value="fr">Français</option>
+                                    <option value="ar">العربية</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="connection-indicator">
+                    <span id="connection-status" class="connection-good">
+                        <i class="fas fa-signal"></i> Good
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Call Statistics (Expandable) -->
+        <div id="call-stats" class="call-stats collapsed">
+            <button id="toggle-stats" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-chart-line"></i> Stats
+            </button>
+            <div class="stats-content">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="stat-item">
+                            <label>Latency:</label>
+                            <span id="latency-value">-- ms</span>
+                        </div>
+                        <div class="stat-item">
+                            <label>Quality:</label>
+                            <span id="quality-value">Good</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="stat-item">
+                            <label>Packets Lost:</label>
+                            <span id="packet-loss-value">0%</span>
+                        </div>
+                        <div class="stat-item">
+                            <label>Bitrate:</label>
+                            <span id="bitrate-value">-- kbps</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incoming Call Modal -->
+    <div class="modal fade" id="incoming-call-modal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content incoming-call-content">
+                <div class="modal-body text-center">
+                    <div class="caller-info">
+                        <div class="caller-avatar">
+                            <i class="fas fa-user-circle"></i>
+                        </div>
+                        <h4 id="caller-name">Unknown</h4>
+                        <p class="text-muted">Incoming voice call...</p>
+                        <div class="call-animation">
+                            <div class="pulse-ring"></div>
+                            <div class="pulse-ring"></div>
+                            <div class="pulse-ring"></div>
+                        </div>
+                    </div>
+                    <div class="call-actions">
+                        <button id="decline-call" class="btn btn-danger btn-lg me-3">
+                            <i class="fas fa-phone-slash"></i> Decline
+                        </button>
+                        <button id="answer-call" class="btn btn-success btn-lg">
+                            <i class="fas fa-phone"></i> Answer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call Ended Modal -->
+    <div class="modal fade" id="call-ended-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Call Ended</h5>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="call-summary">
+                        <i class="fas fa-phone-slash text-muted mb-3" style="font-size: 3rem;"></i>
+                        <h5 id="call-summary-participant">Call with User</h5>
+                        <p id="call-summary-duration" class="text-muted">Duration: 00:00</p>
+                        <p id="call-end-reason" class="text-muted">Call ended normally</p>
+                        
+                        <!-- Call Quality Rating -->
+                        <div class="call-rating mt-3">
+                            <label class="form-label">Rate the call quality:</label>
+                            <div class="rating-stars">
+                                <span class="star" data-rating="1">⭐</span>
+                                <span class="star" data-rating="2">⭐</span>
+                                <span class="star" data-rating="3">⭐</span>
+                                <span class="star" data-rating="4">⭐</span>
+                                <span class="star" data-rating="5">⭐</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" id="call-again-btn" class="btn btn-primary">Call Again</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Error Toast -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="connection-error-toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-danger text-white">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong class="me-auto">Connection Error</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                Failed to connect to the call. Please check your internet connection and try again.
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Audio Elements -->
+    <audio id="local-audio" autoplay muted playsinline></audio>
+    <audio id="remote-audio" autoplay playsinline></audio>
+    <audio id="ringtone" loop>
+        <source src="{{ url_for('static', path='audio/ringtone.mp3') }}" type="audio/mpeg">
+    </audio>
+    <audio id="ringback" loop>
+        <source src="{{ url_for('static', path='audio/ringback.mp3') }}" type="audio/mpeg">
+    </audio>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Voice Call Scripts -->
+    <script src="{{ url_for('static', path='js/webrtc.js') }}"></script>
+    <script src="{{ url_for('static', path='js/voice_call.js') }}"></script>
+    <script src="{{ url_for('static', path='js/audio_visualization.js') }}"></script>
+
+    <!-- Initialize Voice Call -->
+    <script>
+        // Initialize with call data from URL parameters or server
+        document.addEventListener('DOMContentLoaded', async function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const callId = urlParams.get('call_id');
+            const isIncoming = urlParams.get('incoming') === 'true';
+            const participantName = urlParams.get('participant') || 'Unknown';
+            
+            if (callId) {
+                console.log('🚀 Starting voice call with ID:', callId);
+                
+                // Get token from URL parameters first, then localStorage, then opener window
+                let token = urlParams.get('token');
+                if (!token) {
+                    token = localStorage.getItem('access_token');
+                }
+                if (!token) {
+                    // Try to get token from opener window if opened from chat
+                    try {
+                        if (window.opener && window.opener.localStorage) {
+                            token = window.opener.localStorage.getItem('access_token');
+                        }
+                    } catch (e) {
+                        console.warn('Could not access opener localStorage:', e);
+                    }
+                }
+                
+                if (!token) {
+                    console.error('❌ No access token found');
+                    alert('Authentication required. Please login again.');
+                    window.close();
+                    return;
+                }
+                
+                console.log('🔑 Using token:', token ? token.substring(0, 20) + '...' : 'null');
+                
+                // Create VoiceCall instance
+                const voiceCall = new VoiceCall();
+                
+                // Initialize voice call with parameters
+                const success = await voiceCall.init({
+                    callId: callId,
+                    isIncoming: isIncoming,
+                    participantName: participantName,
+                    token: token,
+                    apiBase: '/api/voice-call'
+                });
+                
+                if (!success) {
+                    console.error('❌ Failed to initialize voice call');
+                    alert('Failed to initialize voice call. The window will close.');
+                    window.close();
+                }
+                
+                // Make voiceCall globally accessible for debugging
+                window.voiceCall = voiceCall;
+                
+            } else {
+                console.error('❌ No call ID provided');
+                alert('No call ID provided. The window will close.');
+                window.close();
+            }
+        });
+
+        // Handle window close/refresh
+        window.addEventListener('beforeunload', function(e) {
+            if (window.voiceCall && window.voiceCall.callState === 'active') {
+                e.preventDefault();
+                e.returnValue = 'Are you sure you want to leave the call?';
+                return e.returnValue;
+            }
+        });
+
+        // Handle window focus for notifications
+        let windowFocused = true;
+        window.addEventListener('focus', () => windowFocused = true);
+        window.addEventListener('blur', () => windowFocused = false);
+    </script>
+</body>
+</html>

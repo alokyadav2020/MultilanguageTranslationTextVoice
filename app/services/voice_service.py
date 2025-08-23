@@ -5,7 +5,7 @@ import tempfile
 import asyncio
 import concurrent.futures
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 from sqlalchemy.orm import Session
 
 # Voice processing libraries
@@ -382,6 +382,63 @@ class VoiceMessageService:
             print(f"Fast Whisper error: {e}")
             return None
     
+    async def _speech_to_text_whisper(self, audio_path: str, source_language: str) -> Optional[str]:
+        """
+        Convert speech to text using Whisper for real-time translation
+        Optimized for speed and accuracy in real-time scenarios
+        """
+        
+        if not self.whisper_model:
+            print("❌ Whisper model not available")
+            return None
+        
+        try:
+            # Whisper language mapping
+            whisper_lang_map = {
+                'en': 'english',
+                'fr': 'french', 
+                'ar': 'arabic',
+                'es': 'spanish',
+                'de': 'german',
+                'it': 'italian',
+                'pt': 'portuguese',
+                'ru': 'russian',
+                'ja': 'japanese',
+                'ko': 'korean',
+                'zh': 'chinese'
+            }
+            
+            whisper_language = whisper_lang_map.get(source_language, 'english')
+            
+            print(f"🎤 Converting speech to text using Whisper ({source_language} -> {whisper_language})")
+            
+            # Optimized Whisper settings for real-time translation
+            result = self.whisper_model.transcribe(
+                audio_path,
+                language=whisper_language,
+                task='transcribe',
+                fp16=False,  # Better accuracy
+                verbose=False,
+                temperature=0.0,  # Deterministic output
+                compression_ratio_threshold=2.4,
+                logprob_threshold=-1.0,
+                no_speech_threshold=0.6,
+                condition_on_previous_text=False
+            )
+            
+            text = result["text"].strip() if result.get("text") else ""
+            
+            if text:
+                print(f"✅ Speech recognized: '{text}'")
+                return text
+            else:
+                print("⚠️ No speech detected in audio")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Whisper speech-to-text error: {e}")
+            return None
+    
     def _google_speech_recognition(self, audio_path: str, target_language: str) -> Optional[str]:
         """Google Speech Recognition as fallback"""
         
@@ -679,6 +736,87 @@ class VoiceMessageService:
         
         # Default to English
         return 'en'
+    
+    async def translate_realtime(
+        self, 
+        audio_data: bytes, 
+        source_language: str, 
+        target_language: str, 
+        user_id: int, 
+        call_id: str
+    ) -> Dict[str, Any]:
+        """
+        Real-time voice translation for voice calls
+        1. Convert speech to text using Whisper
+        2. Translate text using local models
+        3. Convert translated text to speech
+        4. Return audio URL and texts
+        """
+        
+        if not VOICE_LIBS_AVAILABLE:
+            raise Exception("Voice processing libraries not available")
+        
+        import time
+        start_time = time.time()
+        
+        try:
+            print(f"🌐 Starting real-time translation: {source_language} → {target_language}")
+            
+            # Step 1: Speech to text
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+                temp_audio.write(audio_data)
+                temp_audio_path = temp_audio.name
+            
+            try:
+                # Use Whisper for speech recognition
+                original_text = await self._speech_to_text_whisper(temp_audio_path, source_language)
+                print(f"🗣️ Recognized text: {original_text}")
+                
+                if not original_text or len(original_text.strip()) < 3:
+                    return {
+                        "original_text": "",
+                        "translated_text": "",
+                        "translated_audio_url": None,
+                        "processing_time": time.time() - start_time
+                    }
+                
+                # Step 2: Translate text
+                translated_text = await translation_service.translate_text(
+                    text=original_text,
+                    source_lang=source_language,
+                    target_lang=target_language
+                )
+                print(f"🔄 Translated text: {translated_text}")
+                
+                # Step 3: Text to speech for translated text
+                translated_audio_filename = f"realtime_{call_id}_{user_id}_{uuid.uuid4().hex[:8]}.mp3"
+                translated_audio_path = self.upload_dir / translated_audio_filename
+                
+                await self._text_to_speech_gtts(translated_text, target_language, str(translated_audio_path))
+                
+                # Generate URL for the translated audio
+                translated_audio_url = f"/static/uploads/voice/{translated_audio_filename}"
+                
+                processing_time = time.time() - start_time
+                print(f"✅ Real-time translation completed in {processing_time:.2f}s")
+                
+                return {
+                    "original_text": original_text,
+                    "translated_text": translated_text,
+                    "translated_audio_url": translated_audio_url,
+                    "processing_time": processing_time
+                }
+                
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_audio_path)
+                except Exception:
+                    pass
+        
+        except Exception as e:
+            print(f"❌ Real-time translation failed: {e}")
+            raise Exception(f"Translation processing failed: {str(e)}")
 
 # Export the class for import
 VoiceService = VoiceMessageService
