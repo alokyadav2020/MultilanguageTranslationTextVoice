@@ -11,7 +11,8 @@ __pycache__/
 
 # C extensions
 *.so
-
+/voice_messages
+/voice_messages/*
 # Distribution / packaging
 .Python
 build/
