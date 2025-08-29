@@ -3,8 +3,17 @@
 <div class="row">
   <div class="col-lg-8">
     <div class="mb-4">
-      <h1 class="h3">Dashboard</h1>
-      <p class="text-muted">Welcome {{ user.full_name or user.email }}.</p>
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <h1 class="h3">Dashboard</h1>
+          <p class="text-muted">Welcome {{ user.full_name or user.email }}.</p>
+        </div>
+        <div class="btn-group">
+          <a href="/groups" class="btn btn-primary">
+            <i class="fas fa-users me-2"></i>Groups
+          </a>
+        </div>
+      </div>
     </div>
     <div class="card shadow-sm">
       <div class="card-body">
@@ -17,6 +26,11 @@
     <div class="card shadow-sm mb-3">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span>Users</span>
+        <div class="btn-group btn-group-sm">
+          <a class="btn btn-success" href="/groups">
+            <i class="fas fa-users"></i> Groups
+          </a>
+        </div>
       </div>
       <ul class="list-group list-group-flush" id="user-list">
         {% if other_users %}
@@ -30,9 +44,9 @@
               </div>
               <div class="btn-group btn-group-sm">
                 <a class="btn btn-outline-primary" href="/chat/{{ u.id }}">
-                  <i class="fas fa-comment"></i> Chat + Voice Calls
+                  <i class="fas fa-comment"></i> Chat
                 </a>
-                <button class="btn btn-outline-warning" onclick="initiateVoiceCall({{ u.id }}, '{{ u.full_name or u.email }}')">
+                <button class="btn btn-outline-warning" onclick="handleQuickCall({{ u.id }}, '{{ u.full_name or u.email }}', this)">
                   <i class="fas fa-phone"></i> Quick Call
                 </button>
               </div>
@@ -125,8 +139,9 @@ let callWindow = null;
 function initializeVoiceCall() {
   if (!voiceCallSocket) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const token = localStorage.getItem('token');
-    voiceCallSocket = new WebSocket(`${protocol}//${window.location.host}/api/voice-call/ws?token=${token}`);
+    // Use the token from the template, fallback to localStorage
+    const authToken = token || localStorage.getItem('token') || localStorage.getItem('access_token');
+    voiceCallSocket = new WebSocket(`${protocol}//${window.location.host}/api/voice-call/ws?token=${authToken}`);
     
     voiceCallSocket.onopen = () => {
       console.log('Voice call WebSocket connected');
@@ -163,27 +178,97 @@ function handleVoiceCallMessage(data) {
   }
 }
 
-// Initiate a voice call
-function initiateVoiceCall(userId, userName) {
-  if (!voiceCallSocket || voiceCallSocket.readyState !== WebSocket.OPEN) {
-    initializeVoiceCall();
-    setTimeout(() => initiateVoiceCall(userId, userName), 1000);
-    return;
-  }
-
-  // Open voice call window
-  const windowFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no';
-  callWindow = window.open(`/voice-call?target_user=${userId}`, 'voiceCall', windowFeatures);
+// Handle quick call with visual feedback
+async function handleQuickCall(userId, userName, buttonElement) {
+  // Disable button and show loading state
+  const originalText = buttonElement.innerHTML;
+  buttonElement.disabled = true;
+  buttonElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calling...';
+  buttonElement.classList.add('btn-secondary');
+  buttonElement.classList.remove('btn-outline-warning');
   
-  if (!callWindow) {
-    alert('Please allow popups for voice calls to work');
+  try {
+    await initiateVoiceCall(userId, userName);
+  } catch (error) {
+    console.error('Call failed:', error);
+  } finally {
+    // Re-enable button after 3 seconds
+    setTimeout(() => {
+      buttonElement.disabled = false;
+      buttonElement.innerHTML = originalText;
+      buttonElement.classList.remove('btn-secondary');
+      buttonElement.classList.add('btn-outline-warning');
+    }, 3000);
+  }
+}
+
+// Initiate a voice call
+async function initiateVoiceCall(userId, userName) {
+  console.log(`Attempting to initiate voice call with user ${userId} (${userName})`);
+  
+  // Get the token
+  const authToken = token || localStorage.getItem('token') || localStorage.getItem('access_token');
+  if (!authToken) {
+    alert('Authentication required. Please refresh the page and try again.');
     return;
   }
+  
+  try {
+    // First, initiate the call on the server
+    console.log('📞 Creating call on server...');
+    const response = await fetch('/api/voice-call/initiate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        callee_id: userId,
+        call_type: 'voice'
+      })
+    });
 
-  // Focus the call window
-  callWindow.focus();
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to initiate call');
+    }
 
-  console.log(`Initiating voice call with user ${userId} (${userName})`);
+    const callData = await response.json();
+    console.log('✅ Call created:', callData);
+
+    // Initialize WebSocket if not connected
+    if (!voiceCallSocket || voiceCallSocket.readyState !== WebSocket.OPEN) {
+      console.log('Initializing voice call WebSocket...');
+      initializeVoiceCall();
+      // Wait a bit for WebSocket to connect
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // Create the voice call URL with call ID
+    const callParams = new URLSearchParams({
+      call_id: callData.call_id,
+      participant: userName,
+      token: authToken
+    });
+    
+    // Open voice call window
+    const windowFeatures = 'width=1200,height=800,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no';
+    callWindow = window.open(`/voice-call?${callParams.toString()}`, 'voiceCall', windowFeatures);
+    
+    if (!callWindow) {
+      alert('Please allow popups for voice calls to work properly.');
+      return;
+    }
+
+    // Focus the call window
+    callWindow.focus();
+    
+    console.log(`✅ Voice call window opened for user ${userId} (${userName}) with call ID: ${callData.call_id}`);
+    
+  } catch (error) {
+    console.error('❌ Failed to initiate voice call:', error);
+    alert(`Failed to start call: ${error.message}`);
+  }
 }
 
 // Show incoming call notification

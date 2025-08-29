@@ -14,7 +14,22 @@ class Settings:
     # mssql+pyodbc://user:pass@localhost:1433/mydb?driver=ODBC+Driver+18+for+SQL+Server
     database_url: str = None
     db_echo: bool = False  # enable SQL logging if needed
-    cors_origins: list = ["*"]
+    # cors_origins: list = ["*"]
+    cors_origins: list = [
+        "*",
+        "http://localhost:3000",
+        "http://localhost:8000", 
+        "http://127.0.0.1:8000",
+        "https://localhost:8000",  # HTTPS localhost
+        "https://127.0.0.1:8000",  # HTTPS localhost
+        "http://192.168.1.*:8000",  # HTTP local network
+        "https://192.168.1.*:8000", # HTTPS local network
+        "http://192.168.0.*:8000",
+        "https://192.168.0.*:8000",
+        "http://10.*:8000",
+        "https://10.*:8000",
+        "https://*.ngrok.io",       # ngrok HTTPS tunnels
+    ]
 
     def __init__(self):
         self.database_url = os.getenv("DATABASE_URL")

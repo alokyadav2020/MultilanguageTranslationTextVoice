@@ -818,5 +818,141 @@ class VoiceMessageService:
             print(f"❌ Real-time translation failed: {e}")
             raise Exception(f"Translation processing failed: {str(e)}")
 
+    async def transcribe_audio(self, audio_path: str, language: str) -> str:
+        """Transcribe audio file to text"""
+        if not VOICE_LIBS_AVAILABLE:
+            return "[Voice message]"
+        
+        try:
+            # Convert audio to WAV format if needed
+            converted_path = await self._convert_audio_format(audio_path)
+            
+            if WHISPER_AVAILABLE and self.whisper_model:
+                result = await self._speech_to_text_whisper(converted_path, language)
+                if result:
+                    # Clean up converted file if it's different from original
+                    if converted_path != audio_path:
+                        try:
+                            os.unlink(converted_path)
+                        except Exception:
+                            pass
+                    return result
+            
+            # Fallback to regular speech recognition
+            result = await self._enhanced_speech_recognition_async(converted_path, language)
+            
+            # Clean up converted file if it's different from original
+            if converted_path != audio_path:
+                try:
+                    os.unlink(converted_path)
+                except Exception:
+                    pass
+            
+            return result or "[Voice message]"
+            
+        except Exception as e:
+            print(f"Error transcribing audio: {e}")
+            return "[Voice message]"
+
+    async def _convert_audio_format(self, audio_path: str) -> str:
+        """Convert audio file to WAV format for better compatibility"""
+        try:
+            # Check if file already has a supported format
+            file_ext = Path(audio_path).suffix.lower()
+            if file_ext in ['.wav', '.mp3', '.flac']:
+                return audio_path
+            
+            print(f"🔄 Converting audio from {file_ext} to WAV format")
+            
+            # Load audio with pydub
+            def convert_audio():
+                try:
+                    # Try loading as different formats
+                    if file_ext == '.webm':
+                        audio = AudioSegment.from_file(audio_path, format="webm")
+                    elif file_ext == '.ogg':
+                        audio = AudioSegment.from_ogg(audio_path)
+                    elif file_ext == '.m4a':
+                        audio = AudioSegment.from_file(audio_path, format="m4a")
+                    else:
+                        # Try auto-detect
+                        audio = AudioSegment.from_file(audio_path)
+                    
+                    # Convert to WAV with specific settings for speech recognition
+                    audio = audio.set_frame_rate(16000)  # 16kHz is good for speech
+                    audio = audio.set_channels(1)  # Mono
+                    audio = audio.set_sample_width(2)  # 16-bit
+                    
+                    # Generate new filename
+                    base_path = Path(audio_path).parent
+                    filename = Path(audio_path).stem + "_converted.wav"
+                    output_path = base_path / filename
+                    
+                    # Export as WAV
+                    audio.export(str(output_path), format="wav")
+                    return str(output_path)
+                    
+                except Exception as e:
+                    print(f"Audio conversion error: {e}")
+                    return audio_path  # Return original if conversion fails
+            
+            # Run conversion in executor to avoid blocking
+            converted_path = await asyncio.get_event_loop().run_in_executor(
+                self.executor, convert_audio
+            )
+            
+            print(f"✅ Audio converted successfully to: {converted_path}")
+            return converted_path
+            
+        except Exception as e:
+            print(f"Error converting audio format: {e}")
+            return audio_path  # Return original if conversion fails
+    
+    async def text_to_speech(self, text: str, language: str, target_dir: str = None) -> str:
+        """Convert text to speech and return file path"""
+        if not VOICE_LIBS_AVAILABLE:
+            return None
+        
+        try:
+            # Generate unique filename
+            file_id = str(uuid.uuid4())
+            
+            # Use target directory if provided, otherwise use default
+            if target_dir:
+                # Ensure target directory exists
+                target_path = Path(target_dir)
+                target_path.mkdir(parents=True, exist_ok=True)
+                output_path = target_path / f"{file_id}_{language}.mp3"
+            else:
+                output_path = self.upload_dir / f"{file_id}_{language}.mp3"
+            
+            # Use gTTS for text-to-speech
+            def generate_audio():
+                # Map language codes for gTTS
+                lang_map = {
+                    'en': 'en',
+                    'fr': 'fr', 
+                    'ar': 'ar'
+                }
+                
+                gtts_lang = lang_map.get(language, 'en')
+                tts = gTTS(text=text, lang=gtts_lang, slow=False)
+                tts.save(str(output_path))
+                return str(output_path)
+            
+            # Run in executor to avoid blocking
+            result = await asyncio.get_event_loop().run_in_executor(
+                self.executor, generate_audio
+            )
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error generating speech: {e}")
+            return None
+
 # Export the class for import
 VoiceService = VoiceMessageService
+
+# Create a global instance
+voice_service = VoiceMessageService()

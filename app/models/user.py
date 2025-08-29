@@ -31,6 +31,10 @@ class User(Base):
 
     messages = relationship("Message", back_populates="sender", cascade="all,delete")
     memberships = relationship("ChatroomMember", back_populates="user", cascade="all,delete")
+    
+    # Group relationships
+    created_groups = relationship("Group", back_populates="creator")
+    groups = relationship("Group", secondary="group_members", back_populates="members")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
@@ -54,3 +58,20 @@ class User(Base):
         ).scalar()
         
         return result or 0.0
+    
+    def get_groups(self, db):
+        """Get all groups this user is a member of"""
+        from .group import Group, group_members
+        return db.query(Group).join(group_members).filter(
+            group_members.c.user_id == self.id,
+            Group.is_active
+        ).all()
+    
+    def get_group_role(self, group_id, db):
+        """Get user's role in a specific group"""
+        from .group import group_members
+        result = db.query(group_members).filter(
+            group_members.c.group_id == group_id,
+            group_members.c.user_id == self.id
+        ).first()
+        return result.role if result else None

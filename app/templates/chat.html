@@ -1470,13 +1470,21 @@
       `;
     }
     
+    // Check MediaDevices API availability but don't immediately hide the button
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      // Browser doesn't support MediaDevices API
-      recordBtn.style.display = 'none';
-      infoBtn.style.display = 'inline-block';
-      console.warn('Voice recording not supported: MediaDevices API not available');
-      showVoiceUnavailableMessage('Voice recording is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.');
-      return false;
+      // Browser doesn't support MediaDevices API - show info but still allow users to try
+      console.warn('Voice recording may not be supported: MediaDevices API not fully available');
+      
+      // Only hide if we're sure it won't work (very old browsers)
+      if (!navigator.mediaDevices) {
+        recordBtn.style.display = 'none';
+        infoBtn.style.display = 'inline-block';
+        showVoiceUnavailableMessage('Voice recording is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.');
+        return false;
+      } else {
+        // MediaDevices exists but getUserMedia might not - let user try
+        console.log('MediaDevices available but getUserMedia uncertain - allowing user to try');
+      }
     }
     
     // Check server secure context status
@@ -1485,7 +1493,17 @@
       const secureContext = response.headers.get('X-Secure-Context');
       const httpsUpgrade = response.headers.get('X-HTTPS-Upgrade');
       
-      if (secureContext === 'false') {
+      // Only hide for HTTP on remote networks, allow local development and HTTPS
+      const isLocalhost = window.location.hostname === 'localhost' || 
+                         window.location.hostname === '127.0.0.1' || 
+                         window.location.hostname.startsWith('192.168.') ||
+                         window.location.hostname.startsWith('10.') ||
+                         window.location.hostname.endsWith('.local');
+      
+      const isHttps = window.location.protocol === 'https:';
+      
+      if (secureContext === 'false' && !isLocalhost && !isHttps) {
+        // Only hide for remote HTTP connections
         recordBtn.style.display = 'none';
         infoBtn.style.display = 'inline-block';
         console.warn('Voice recording not available: Requires HTTPS for remote access');
@@ -1496,22 +1514,34 @@
           </a>` : ''
         );
         return false;
+      } else {
+        console.log('Recording allowed:', { isLocalhost, isHttps, secureContext });
       }
     } catch (error) {
       console.warn('Could not check server security context:', error);
     }
     
-    // Check if we're in a secure context (HTTPS or localhost)
-    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      // Not in secure context and not localhost
-      recordBtn.style.display = 'none';
-      infoBtn.style.display = 'inline-block';
-      console.warn('Voice recording not available: Requires HTTPS for remote access');
+    // Check if we're in a secure context (HTTPS or localhost) - but be more permissive
+    const isLocalNetwork = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1' ||
+                           window.location.hostname.startsWith('192.168.') ||
+                           window.location.hostname.startsWith('10.') ||
+                           window.location.hostname.endsWith('.local');
+    
+    if (!window.isSecureContext && !isLocalNetwork) {
+      // Only warn for remote HTTP connections, but still allow user to try
+      console.warn('Voice recording may have issues: Not in secure context for remote access');
+      
+      // Show a warning but don't completely block
       showVoiceUnavailableMessage(
-        'Voice recording requires HTTPS for remote access. Please use a secure connection.',
-        `<br><small>💡 Try: <code>https://${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}</code></small>`
+        'Voice recording works best with HTTPS. You may experience issues with HTTP.',
+        `<br><small>💡 Try: <code>https://${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}</code></small><br>
+         <button class="btn btn-sm btn-warning mt-2" onclick="this.parentElement.parentElement.style.display='none';">
+           <i class="fas fa-exclamation-triangle"></i> Continue Anyway
+         </button>`
       );
-      return false;
+      
+      // Don't return false - let user continue
     }
     
     // Test if getUserMedia is actually accessible (with permission prompt)

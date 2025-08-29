@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .group-sidebar { 
+            height: 100vh; 
+            overflow-y: auto; 
+            border-right: 1px solid #dee2e6; 
+            background-color: #f8f9fa;
+        }
+        .chat-area { 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            position: relative;
+            z-index: 2;
+        }
+        .messages-container { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 15px; 
+            background-color: #fff;
+        }
+        .message-input-area { 
+            padding: 15px; 
+            border-top: 1px solid #dee2e6; 
+            background-color: #f8f9fa;
+        }
+        .group-item { 
+            cursor: pointer; 
+            padding: 12px; 
+            border-bottom: 1px solid #e9ecef; 
+            transition: background-color 0.2s;
+        }
+        .group-item:hover { 
+            background-color: #e9ecef; 
+        }
+        .group-item.active { 
+            background-color: #0d6efd; 
+            color: white;
+        }
+        .message-bubble { 
+            max-width: 70%; 
+            margin-bottom: 15px; 
+        }
+        .message-bubble.own { 
+            margin-left: auto; 
+        }
+        .translation-toggle { 
+            font-size: 0.8em; 
+            color: #6c757d; 
+            cursor: pointer; 
+            text-decoration: underline;
+        }
+        .typing-indicator { 
+            font-style: italic; 
+            color: #6c757d; 
+            padding: 5px 15px;
+        }
+        .member-list { 
+            max-height: 200px; 
+            overflow-y: auto; 
+        }
+        .reaction-button { 
+            font-size: 1.1em; 
+            border: none; 
+            background: none; 
+            padding: 2px 5px;
+            margin: 1px;
+            border-radius: 10px;
+            transition: background-color 0.2s;
+        }
+        .reaction-button:hover {
+            background-color: #e9ecef;
+        }
+        .reaction-count { 
+            font-size: 0.75em; 
+            color: #6c757d;
+        }
+        .voice-message {
+            background-color: #e3f2fd;
+            border-radius: 15px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+        }
+        .voice-message.mine {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .voice-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .play-voice-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        .play-voice-btn:hover {
+            transform: scale(1.1);
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .play-voice-btn i {
+            font-size: 14px;
+            margin-left: 2px; /* Offset to center the play triangle */
+        }
+        .play-voice-btn.btn-light {
+            background: rgba(0, 123, 255, 0.1);
+            border-color: rgba(0, 123, 255, 0.3);
+            color: #007bff;
+        }
+        .play-voice-btn.btn-light:hover {
+            background: rgba(0, 123, 255, 0.2);
+            border-color: rgba(0, 123, 255, 0.6);
+        }
+        .audio-waveform {
+            flex: 1;
+            height: 30px;
+            background: linear-gradient(90deg, #007bff 0%, #0056b3 100%);
+            border-radius: 15px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .audio-waveform.mine {
+            background: linear-gradient(90deg, #ffffff 0%, #f8f9fa 100%);
+        }
+        .voice-duration {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+        .voice-transcription {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            padding: 4px 8px;
+            margin-top: 4px;
+            font-style: italic;
+            font-size: 0.85rem;
+        }
+        .translation-note {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 2px;
+        }
+        .language-preferences {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .online-indicator {
+            width: 8px;
+            height: 8px;
+            background-color: #28a745;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .group-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .voice-recording {
+            background-color: #ff4444;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+        .btn-group .btn {
+            min-width: 50px;
+        }
+        .input-group .btn {
+            min-width: 50px;
+            border: 1px solid #ccc;
+        }
+        .input-group .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .input-group .btn:not(:disabled) {
+            opacity: 1;
+            cursor: pointer;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        .translation-info {
+            background-color: #f8f9fa;
+            border-left: 3px solid #28a745;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+        .translation-toggle {
+            cursor: pointer;
+            color: #007bff;
+            font-size: 0.8em;
+            margin-top: 3px;
+        }
+        .translation-toggle:hover {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+        .available-translations {
+            background-color: #e9ecef;
+            padding: 3px 8px;
+            border-radius: 3px;
+            margin-top: 5px;
+        }
+        .language-option {
+            cursor: pointer;
+            color: #007bff;
+            margin-right: 8px;
+            padding: 2px 5px;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+        .language-option:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .original-content {
+            background-color: #f1f3f4;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid p-0">
+        <div class="row g-0">
+            <!-- Groups Sidebar -->
+            <div class="col-md-3 group-sidebar">
+                <div class="d-flex justify-content-between align-items-center p-3 border-bottom bg-white">
+                    <h5 class="mb-0"><i class="fas fa-users me-2"></i>Groups</h5>
+                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+                        <i class="fas fa-plus"></i> New
+                    </button>
+                </div>
+                
+                <div id="groupsList">
+                    <!-- Groups will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Chat Area -->
+            <div class="col-md-9 position-relative">
+                <!-- Welcome Screen -->
+                <div class="d-flex align-items-center justify-content-center h-100 position-absolute w-100" id="welcomeScreen" style="top: 0; left: 0; background-color: #fff; z-index: 1;">
+                    <div class="text-center">
+                        <i class="fas fa-users fa-5x text-muted mb-4"></i>
+                        <h3 class="text-muted mb-3">Welcome to Group Chat</h3>
+                        <p class="text-muted mb-4">Select a group to start chatting with multilingual support</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+                            <i class="fas fa-plus me-2"></i>Create Your First Group
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="chat-area" id="chatArea" style="display: none;">
+                    <!-- Group Header -->
+                    <div class="p-3 border-bottom group-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0" id="groupName">Select a group</h6>
+                                <small id="groupInfo">0 members • 0 online</small>
+                            </div>
+                            <div>
+                                <button class="btn btn-light btn-sm me-2" onclick="showGroupInfo()">
+                                    <i class="fas fa-info-circle"></i> Info
+                                </button>
+                                <button class="btn btn-light btn-sm me-2" onclick="showAddMemberModal()">
+                                    <i class="fas fa-user-plus"></i> Add Member
+                                </button>
+                                <button class="btn btn-light btn-sm me-2" onclick="showLanguageSettings()">
+                                    <i class="fas fa-language"></i> Language
+                                </button>
+                                <button class="btn btn-success btn-sm" onclick="startGroupCall()">
+                                    <i class="fas fa-phone"></i> Call
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Language Preferences Panel -->
+                    <div id="languagePanel" class="language-preferences" style="display: none;">
+                        <h6><i class="fas fa-language"></i> Language Preferences</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">Text Language:</label>
+                                <select class="form-select form-select-sm" id="userTextLanguage">
+                                    <option value="en">English</option>
+                                    <option value="fr">French</option>
+                                    <option value="ar">Arabic</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Voice Language:</label>
+                                <select class="form-select form-select-sm" id="userVoiceLanguage">
+                                    <option value="en">English</option>
+                                    <option value="fr">French</option>
+                                    <option value="ar">Arabic</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-primary btn-sm me-2" onclick="updateLanguagePreferences()">
+                                <i class="fas fa-save"></i> Save
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="hideLanguageSettings()">
+                                <i class="fas fa-times"></i> Cancel
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Messages Container -->
+                    <div class="messages-container" id="messagesContainer">
+                        <!-- Messages will appear here -->
+                    </div>
+                    
+                    <!-- Typing Indicators -->
+                    <div id="typingIndicators"></div>
+                    
+                    <!-- Message Input -->
+                    <div class="message-input-area">
+                        <div class="row">
+                            <div class="col">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="messageInput" 
+                                           placeholder="Type your message..." disabled>
+                                    <button class="btn btn-info" id="voiceButton" disabled onclick="toggleVoiceRecording()" 
+                                            style="min-width: 60px; display: inline-block;">
+                                        <i class="fas fa-microphone"></i>
+                                    </button>
+                                    <button class="btn btn-primary" id="sendButton" disabled onclick="sendMessage()" 
+                                            style="min-width: 60px; display: inline-block;">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Group Modal -->
+    <div class="modal fade" id="createGroupModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-users me-2"></i>Create New Group</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createGroupForm">
+                        <div class="mb-3">
+                            <label for="groupNameInput" class="form-label">Group Name *</label>
+                            <input type="text" class="form-control" id="groupNameInput" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="groupDescInput" class="form-label">Description</label>
+                            <textarea class="form-control" id="groupDescInput" rows="3" 
+                                      placeholder="What's this group about?"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="defaultLangSelect" class="form-label">Default Language</label>
+                            <select class="form-select" id="defaultLangSelect">
+                                <option value="en">English</option>
+                                <option value="fr">French</option>
+                                <option value="ar">Arabic</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="maxMembersInput" class="form-label">Max Members</label>
+                            <input type="number" class="form-control" id="maxMembersInput" value="100" min="2" max="500">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="createGroup()">
+                        <i class="fas fa-plus me-2"></i>Create Group
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Info Modal -->
+    <div class="modal fade" id="groupInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-info-circle me-2"></i>Group Information</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="groupInfoContent">
+                    <!-- Group info will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Member Modal -->
+    <div class="modal fade" id="addMemberModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i>Add Member to Group</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addMemberForm">
+                        <div class="mb-3">
+                            <label for="memberEmailInput" class="form-label">User Email *</label>
+                            <input type="email" class="form-control" id="memberEmailInput" 
+                                   placeholder="Enter user's email address" required>
+                            <div class="form-text">Enter the email address of the user you want to add</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="memberRoleSelect" class="form-label">Role</label>
+                            <select class="form-select" id="memberRoleSelect">
+                                <option value="member">Member</option>
+                                <option value="moderator">Moderator</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="memberTextLangSelect" class="form-label">Preferred Text Language</label>
+                            <select class="form-select" id="memberTextLangSelect">
+                                <option value="en">English</option>
+                                <option value="fr">French</option>
+                                <option value="ar">Arabic</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="memberVoiceLangSelect" class="form-label">Preferred Voice Language</label>
+                            <select class="form-select" id="memberVoiceLangSelect">
+                                <option value="en">English</option>
+                                <option value="fr">French</option>
+                                <option value="ar">Arabic</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addMemberToGroup()">
+                        <i class="fas fa-user-plus me-2"></i>Add Member
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const token = '{{ token }}';
+        const currentUserId = parseInt('{{ user.id }}');
+        let currentGroupId = null;
+        let websocket = null;
+        let typingTimer = null;
+        let mediaRecorder = null;
+        let isRecording = false;
+        let audioChunks = [];
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Initializing Group Chat Application...');
+            
+            // Load saved language preferences first
+            loadLanguagePreferences();
+            
+            // Initialize other components
+            loadUserGroups();
+            connectWebSocket();
+            setupEventListeners();
+            
+            console.log('Group Chat Application initialized successfully');
+        });
+
+        function loadLanguagePreferences() {
+            // Load from localStorage
+            const savedTextLang = localStorage.getItem('userTextLanguage') || 'en';
+            const savedVoiceLang = localStorage.getItem('userVoiceLanguage') || 'en';
+            
+            // Set the dropdowns
+            const textSelect = document.getElementById('userTextLanguage');
+            const voiceSelect = document.getElementById('userVoiceLanguage');
+            
+            if (textSelect) textSelect.value = savedTextLang;
+            if (voiceSelect) voiceSelect.value = savedVoiceLang;
+            
+            // Set global variables
+            window.userPreferredLanguage = savedTextLang;
+            window.userVoiceLanguage = savedVoiceLang;
+            
+            console.log('Loaded language preferences:', { text: savedTextLang, voice: savedVoiceLang });
+        }
+
+        function setupEventListeners() {
+            console.log('Setting up event listeners...');
+            
+            // Message input typing detection
+            const messageInput = document.getElementById('messageInput');
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                } else {
+                    handleTyping();
+                }
+            });
+            
+            // Language preference change handlers
+            const textSelect = document.getElementById('userTextLanguage');
+            const voiceSelect = document.getElementById('userVoiceLanguage');
+            
+            if (textSelect) {
+                textSelect.addEventListener('change', function() {
+                    console.log('Text language changed to:', this.value);
+                    // Auto-save preference change
+                    localStorage.setItem('userTextLanguage', this.value);
+                    window.userPreferredLanguage = this.value;
+                });
+            }
+            
+            if (voiceSelect) {
+                voiceSelect.addEventListener('change', function() {
+                    console.log('Voice language changed to:', this.value);
+                    // Auto-save preference change
+                    localStorage.setItem('userVoiceLanguage', this.value);
+                    window.userVoiceLanguage = this.value;
+                });
+            }
+            
+            console.log('Event listeners set up successfully');
+        }
+
+        function connectWebSocket() {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                return; // Already connected
+            }
+            
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws/groups?token=${token}`;
+            
+            websocket = new WebSocket(wsUrl);
+            
+            websocket.onopen = function() {
+                console.log('Connected to groups WebSocket');
+            };
+            
+            websocket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+            
+            websocket.onclose = function() {
+                console.log('Groups WebSocket connection closed');
+                websocket = null;
+                // Only reconnect if the page is still active
+                if (document.visibilityState === 'visible') {
+                    setTimeout(connectWebSocket, 3000);
+                }
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            console.log('Received WebSocket message:', data);
+            
+            // Add specific debugging for voice messages
+            if (data.type === 'group_voice_message') {
+                console.log('🎵 VOICE MESSAGE RECEIVED:', {
+                    type: data.type,
+                    audio_urls: data.audio_urls,
+                    voice_file: data.voice_file,
+                    voice_translations: data.voice_translations,
+                    content: data.content,
+                    original_language: data.original_language,
+                    userVoiceLanguage: window.userVoiceLanguage,
+                    userPreferredLanguage: window.userPreferredLanguage,
+                    fullData: data
+                });
+                
+                // Test audio URL selection here
+                const audioUrls = data.audio_urls || data.voice_translations || {};
+                const userLang = window.userVoiceLanguage || window.userPreferredLanguage || 'en';
+                const selectedUrl = getAudioUrlForLanguage(audioUrls, userLang, data.original_language);
+                
+                console.log('🎯 AUDIO URL SELECTION:', {
+                    audioUrls: audioUrls,
+                    userLang: userLang,
+                    originalLang: data.original_language,
+                    selectedUrl: selectedUrl
+                });
+            }
+            
+            switch(data.type) {
+                case 'connection_established':
+                    console.log('Connected to groups:', data.connected_groups);
+                    break;
+                
+                case 'group_message':
+                case 'group_voice_message':
+                    if (data.group_id === currentGroupId) {
+                        console.log('Processing group message:', {
+                            type: data.type,
+                            message_type: data.message_type,
+                            content: data.content,
+                            preferred_content: data.preferred_content,
+                            translations: data.translations,
+                            voice_file: data.voice_file,
+                            voice_translations: data.voice_translations,
+                            voice_translation: data.voice_translation,
+                            user_language: data.user_language,
+                            original_language: data.original_language
+                        });
+                        addMessageToChat(data);
+                    }
+                    break;
+                
+                case 'typing_update':
+                    if (data.group_id === currentGroupId) {
+                        handleTypingIndicator(data);
+                    }
+                    break;
+                
+                case 'reaction_update':
+                    if (data.group_id === currentGroupId) {
+                        updateMessageReactions(data);
+                    }
+                    break;
+                
+                case 'group_notification':
+                    handleGroupNotification(data);
+                    break;
+                
+                case 'online_members':
+                    updateOnlineCount(data);
+                    break;
+                
+                case 'keep_alive':
+                    console.log('Keep-alive received');
+                    break;
+            }
+        }
+
+        async function loadUserGroups() {
+            try {
+                const response = await fetch('/api/groups/list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                displayGroups(data.groups);
+            } catch (error) {
+                console.error('Error loading groups:', error);
+            }
+        }
+
+        function displayGroups(groups) {
+            const groupsList = document.getElementById('groupsList');
+            groupsList.innerHTML = '';
+            
+            if (groups.length === 0) {
+                groupsList.innerHTML = `
+                    <div class="text-center p-4">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No groups yet</p>
+                        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+                            Create First Group
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            groups.forEach(group => {
+                const groupElement = document.createElement('div');
+                groupElement.className = 'group-item';
+                groupElement.onclick = () => selectGroup(group.id);
+                
+                groupElement.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">${group.name}</h6>
+                            <small class="text-muted">
+                                <i class="fas fa-users me-1"></i>${group.member_count} members
+                                <span class="badge bg-secondary ms-2">${group.user_role}</span>
+                            </small>
+                        </div>
+                    </div>
+                    ${group.description ? `<p class="mb-1 small text-muted mt-1">${group.description}</p>` : ''}
+                `;
+                
+                groupsList.appendChild(groupElement);
+            });
+        }
+
+        async function selectGroup(groupId) {
+            currentGroupId = groupId;
+            console.log('Selecting group:', groupId);
+            
+            // Update UI
+            document.getElementById('welcomeScreen').style.display = 'none';
+            document.getElementById('chatArea').style.display = 'flex';
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendButton').disabled = false;
+            document.getElementById('voiceButton').disabled = false;
+            
+            console.log('Buttons enabled');
+            
+            // Highlight selected group
+            document.querySelectorAll('.group-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.group-item').classList.add('active');
+            
+            // Load group details and messages
+            await Promise.all([
+                loadGroupDetails(groupId),
+                loadGroupMessages(groupId)
+            ]);
+            
+            // Request online members
+            if (websocket) {
+                websocket.send(JSON.stringify({
+                    type: 'get_online_members',
+                    group_id: groupId
+                }));
+            }
+        }
+
+        async function loadGroupDetails(groupId) {
+            try {
+                const response = await fetch(`/api/groups/${groupId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                // Update header
+                document.getElementById('groupName').textContent = data.name;
+                document.getElementById('groupInfo').textContent = `${data.members.length} members`;
+                
+                // Set user's language preferences
+                document.getElementById('userTextLanguage').value = data.user_preferred_language;
+                document.getElementById('userVoiceLanguage').value = data.user_voice_language;
+                document.getElementById('messageLanguage').value = data.user_preferred_language;
+                
+                // Update group info modal content
+                updateGroupInfoModal(data);
+                
+            } catch (error) {
+                console.error('Error loading group details:', error);
+            }
+        }
+
+        function updateGroupInfoModal(groupData) {
+            const infoContent = document.getElementById('groupInfoContent');
+            
+            let membersHtml = '';
+            groupData.members.forEach(member => {
+                const canRemove = groupData.user_role === 'admin' && member.id !== currentUserId;
+                membersHtml += `
+                    <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                        <div>
+                            <strong>${member.name}</strong>
+                            <br>
+                            <small class="text-muted">${member.email}</small>
+                            <br>
+                            <span class="badge bg-primary">${member.role}</span>
+                            <small class="text-muted ms-2">
+                                Text: ${member.preferred_language.toUpperCase()} | 
+                                Voice: ${member.voice_language.toUpperCase()}
+                            </small>
+                        </div>
+                        <div>
+                            ${canRemove ? `
+                                <button class="btn btn-outline-danger btn-sm" onclick="removeMember(${member.id})">
+                                    <i class="fas fa-user-minus"></i> Remove
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            infoContent.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-info-circle me-2"></i>Group Details</h6>
+                        <p><strong>Name:</strong> ${groupData.name}</p>
+                        <p><strong>Description:</strong> ${groupData.description || 'No description'}</p>
+                        <p><strong>Type:</strong> ${groupData.type}</p>
+                        <p><strong>Default Language:</strong> ${groupData.default_language.toUpperCase()}</p>
+                        <p><strong>Max Members:</strong> ${groupData.max_members}</p>
+                        <p><strong>Created:</strong> ${new Date(groupData.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6><i class="fas fa-users me-2"></i>Members (${groupData.members.length})</h6>
+                            ${groupData.user_role === 'admin' || groupData.user_role === 'moderator' ? `
+                                <button class="btn btn-primary btn-sm" onclick="showAddMemberModal()">
+                                    <i class="fas fa-user-plus"></i> Add Member
+                                </button>
+                            ` : ''}
+                        </div>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            ${membersHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function removeMember(userId) {
+            if (!confirm('Are you sure you want to remove this member?')) {
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('user_id', userId);
+                
+                const response = await fetch(`/api/groups/${currentGroupId}/remove-member`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    alert('Member removed successfully');
+                    loadGroupDetails(currentGroupId);
+                } else {
+                    const result = await response.json();
+                    alert(result.detail || 'Failed to remove member');
+                }
+            } catch (error) {
+                console.error('Error removing member:', error);
+                alert('Error removing member');
+            }
+        }
+
+        async function loadGroupMessages(groupId) {
+            try {
+                const response = await fetch(`/api/groups/${groupId}/messages`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                displayMessages(data.messages);
+            } catch (error) {
+                console.error('Error loading messages:', error);
+            }
+        }
+
+        function displayMessages(messages) {
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            
+            messages.forEach(message => {
+                addMessageToChat(message);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addMessageToChat(messageData) {
+            console.log('Adding message to chat:', {
+                messageData,
+                userPreferredLanguage: window.userPreferredLanguage,
+                userVoiceLanguage: window.userVoiceLanguage
+            });
+            
+            const container = document.getElementById('messagesContainer');
+            const messageElement = document.createElement('div');
+            
+            const isOwn = messageData.sender.id === currentUserId;
+            messageElement.className = `message-bubble ${isOwn ? 'own' : ''}`;
+            
+            // Check if it's a voice message
+            if (messageData.message_type === 'voice' || messageData.type === 'voice_message') {
+                addVoiceMessageToChat(messageData);
+                return;
+            }
+            
+            // Handle regular text messages
+            const originalText = messageData.content || messageData.original_text;
+            const originalLang = messageData.original_language || 'en';
+            const translationsCache = messageData.translations || messageData.translations_cache || {};
+            const timestamp = messageData.timestamp;
+            
+            // Get display text based on user's preference
+            const displayData = getDisplayText(originalText, originalLang, translationsCache);
+            const displayText = displayData.text;
+            
+            // Format timestamp
+            let timeStr = '';
+            if (timestamp) {
+                const date = new Date(timestamp);
+                timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }
+            
+            let messageHtml = `
+                <div class="card ${isOwn ? 'bg-primary text-white' : ''}">
+                    <div class="card-body p-3">
+                        ${!isOwn ? `<small class="fw-bold">${messageData.sender.name}</small><br>` : ''}
+                        <div class="message-content">${displayText}</div>
+            `;
+            
+            // Add timestamp
+            if (timeStr) {
+                messageHtml += `<br><small class="text-muted opacity-75"><i class="fas fa-clock me-1"></i>${timeStr}</small>`;
+            }
+            
+            // Add translation note if translated
+            if (displayData.isTranslated) {
+                messageHtml += `<div class="translation-note">Translated from ${originalLang.toUpperCase()}: "${originalText}"</div>`;
+            } else if (originalLang !== 'en') {
+                messageHtml += `<br><small class="text-muted opacity-75">${originalLang.toUpperCase()}</small>`;
+            }
+            
+            messageHtml += `
+                        <div class="message-reactions mt-2" id="reactions-${messageData.message_id || messageData.id}">
+                            ${generateReactionButtons(messageData.reactions, messageData.message_id || messageData.id)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            messageElement.innerHTML = messageHtml;
+            messageElement.dataset.messageId = messageData.message_id || messageData.id;
+            messageElement.dataset.translations = JSON.stringify(translationsCache);
+            
+            container.appendChild(messageElement);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function addVoiceMessageToChat(messageData) {
+            console.log('Adding voice message to chat:', messageData);
+            console.log('Voice message audio URLs:', messageData.audio_urls);
+            console.log('User voice language preference:', window.userVoiceLanguage);
+            
+            const container = document.getElementById('messagesContainer');
+            const messageElement = document.createElement('div');
+            
+            const isOwn = messageData.sender.id === currentUserId;
+            messageElement.className = `message-bubble ${isOwn ? 'own' : ''}`;
+            
+            // Extract voice message data
+            const originalText = messageData.content || messageData.original_text || messageData.transcription || '';
+            const originalLang = messageData.original_language || 'en';
+            const translationsCache = messageData.translations || messageData.translations_cache || {};
+            const audioUrls = messageData.audio_urls || messageData.voice_translations || {};
+            const audioDuration = messageData.audio_duration || messageData.duration || 0;
+            const timestamp = messageData.timestamp;
+            
+            console.log('Processed voice data:', {
+                originalText,
+                originalLang,
+                translationsCache,
+                audioUrls,
+                audioDuration
+            });
+            
+            // Get display text and audio URL based on user's preference
+            const displayData = getDisplayText(originalText, originalLang, translationsCache);
+            const displayText = displayData.text;
+            const userLang = window.userVoiceLanguage || window.userPreferredLanguage || 'en';
+            const audioUrl = getAudioUrlForLanguage(audioUrls, userLang, originalLang);
+            
+            console.log('🔍 AUDIO URL SELECTION DEBUG:', {
+                availableAudioUrls: audioUrls,
+                requestedUserLang: userLang,
+                originalLang: originalLang,
+                selectedAudioUrl: audioUrl,
+                allAudioKeys: Object.keys(audioUrls),
+                hasUserLangAudio: audioUrls[userLang] ? 'YES' : 'NO',
+                userLangAudioUrl: audioUrls[userLang] || 'NOT_FOUND'
+            });
+            
+            console.log('Final voice message display:', {
+                displayText,
+                isTranslated: displayData.isTranslated,
+                userLang,
+                audioUrl
+            });
+            
+            // Format duration and timestamp
+            const durationStr = formatDuration(audioDuration);
+            let timeStr = '';
+            if (timestamp) {
+                const date = new Date(timestamp);
+                timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }
+            
+            let messageHtml = `
+                <div class="card ${isOwn ? 'bg-primary text-white' : ''}">
+                    <div class="card-body p-3">
+                        ${!isOwn ? `<small class="fw-bold">${messageData.sender.name}</small><br>` : ''}
+                        <span class="language-badge small">${originalLang.toUpperCase()}</span>
+                        
+                        <div class="voice-message ${isOwn ? 'mine' : ''} mt-2">
+                            <button class="play-voice-btn btn ${isOwn ? 'btn-light' : 'btn-primary'} btn-sm" data-audio-url="${audioUrl || ''}">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <div class="audio-waveform ${isOwn ? 'mine' : ''}">
+                                <small class="${isOwn ? 'text-primary' : 'text-white'}">
+                                    <i class="fas fa-volume-up me-1"></i>Voice Message
+                                </small>
+                            </div>
+                            <small class="voice-duration">${durationStr}</small>
+                        </div>
+                        
+                        ${displayText ? `
+                            <div class="voice-transcription mt-2">
+                                <small><strong>📝 Transcription:</strong> "${displayText}"</small>
+                                ${displayData.isTranslated ? `
+                                    <br><small class="text-muted">Translated from ${originalLang.toUpperCase()}: "${originalText}"</small>
+                                ` : ''}
+                            </div>
+                        ` : ''}
+            `;
+            
+            // Add timestamp
+            if (timeStr) {
+                messageHtml += `<br><small class="text-muted opacity-75"><i class="fas fa-clock me-1"></i>${timeStr}</small>`;
+            }
+            
+            // Add translation note if translated
+            if (displayData.isTranslated) {
+                messageHtml += `<div class="translation-note">Translated from ${originalLang.toUpperCase()}: "${originalText}"</div>`;
+            }
+            
+            // Show available audio languages
+            if (audioUrls && Object.keys(audioUrls).length > 1) {
+                messageHtml += `<div class="mt-2"><small class="text-muted">Available in: `;
+                Object.keys(audioUrls).forEach(lang => {
+                    if (lang !== userLang) {
+                        messageHtml += `
+                            <button class="btn btn-outline-secondary btn-xs me-1" onclick="playVoiceInLanguage('${audioUrls[lang]}', '${lang}')">
+                                ${getLanguageName(lang)}
+                            </button>
+                        `;
+                    }
+                });
+                messageHtml += `</small></div>`;
+            }
+            
+            messageHtml += `
+                        <div class="message-reactions mt-2" id="reactions-${messageData.message_id || messageData.id}">
+                            ${generateReactionButtons(messageData.reactions, messageData.message_id || messageData.id)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            messageElement.innerHTML = messageHtml;
+            messageElement.dataset.messageId = messageData.message_id || messageData.id;
+            messageElement.dataset.translations = JSON.stringify(translationsCache);
+            
+            // Add click event for main play button
+            const playBtn = messageElement.querySelector('.play-voice-btn');
+            if (playBtn && audioUrl) {
+                playBtn.addEventListener('click', function() {
+                    playVoiceMessage(audioUrl, playBtn);
+                });
+            }
+            
+            container.appendChild(messageElement);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function generateReactionButtons(reactions, messageId) {
+            if (!reactions) reactions = {};
+            
+            let html = '';
+            const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+            
+            // Show existing reactions
+            for (const [reaction, users] of Object.entries(reactions)) {
+                const userReacted = users.some(u => u.user_id === currentUserId);
+                html += `
+                    <button class="reaction-button ${userReacted ? 'bg-primary text-white' : ''}" 
+                            onclick="toggleReaction('${reaction}', ${messageId})">
+                        ${reaction} <span class="reaction-count">${users.length}</span>
+                    </button>
+                `;
+            }
+            
+            // Add quick reaction buttons
+            html += '<div class="mt-1">';
+            commonReactions.forEach(reaction => {
+                if (!reactions[reaction] || reactions[reaction].length === 0) {
+                    html += `<button class="reaction-button" onclick="toggleReaction('${reaction}', ${messageId})">${reaction}</button>`;
+                }
+            });
+            html += '</div>';
+            
+            return html;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            // Use saved language preference or fallback to select value
+            const language = window.userPreferredLanguage || document.getElementById('userTextLanguage').value;
+            const content = input.value.trim();
+            
+            console.log('Sending message:', content, 'in language:', language);
+            
+            if (!content || !currentGroupId) {
+                console.log('No content or group selected');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('content', content);
+                formData.append('language', language);
+                
+                console.log('Making API call to send message');
+                const response = await fetch(`/api/groups/${currentGroupId}/send-message`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('Message sent successfully:', result);
+                    input.value = '';
+                    stopTyping();
+                } else {
+                    console.error('Failed to send message:', response.status);
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+            }
+        }
+
+        async function toggleVoiceRecording() {
+            if (!isRecording) {
+                await startVoiceRecording();
+            } else {
+                await stopVoiceRecording();
+            }
+        }
+
+        async function startVoiceRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    await sendVoiceMessage(audioBlob);
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                
+                // Update UI
+                const voiceButton = document.getElementById('voiceButton');
+                voiceButton.innerHTML = '<i class="fas fa-stop"></i>';
+                voiceButton.classList.remove('btn-info');
+                voiceButton.classList.add('btn-danger', 'voice-recording');
+                
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                alert('Could not access microphone. Please check permissions.');
+            }
+        }
+
+        async function stopVoiceRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                
+                // Update UI
+                const voiceButton = document.getElementById('voiceButton');
+                voiceButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                voiceButton.classList.remove('btn-danger', 'voice-recording');
+                voiceButton.classList.add('btn-info');
+            }
+        }
+
+        async function sendVoiceMessage(audioBlob) {
+            // Use saved voice language preference or fallback to select value
+            const language = window.userVoiceLanguage || document.getElementById('userVoiceLanguage').value;
+            
+            try {
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'voice_message.webm');
+                formData.append('language', language);
+                
+                const response = await fetch(`/api/groups/${currentGroupId}/send-voice`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to send voice message');
+                }
+                
+            } catch (error) {
+                console.error('Error sending voice message:', error);
+                alert('Failed to send voice message');
+            }
+        }
+
+        async function createGroup() {
+            const name = document.getElementById('groupNameInput').value;
+            const description = document.getElementById('groupDescInput').value;
+            const defaultLanguage = document.getElementById('defaultLangSelect').value;
+            const maxMembers = document.getElementById('maxMembersInput').value;
+            
+            if (!name.trim()) {
+                alert('Please enter a group name');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                formData.append('description', description);
+                formData.append('default_language', defaultLanguage);
+                formData.append('max_members', maxMembers);
+                
+                const response = await fetch('/api/groups/create', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('createGroupModal'));
+                    modal.hide();
+                    
+                    // Clear form
+                    document.getElementById('createGroupForm').reset();
+                    
+                    // Reload groups
+                    loadUserGroups();
+                    
+                    // Select the new group
+                    setTimeout(() => selectGroup(result.group_id), 500);
+                }
+            } catch (error) {
+                console.error('Error creating group:', error);
+            }
+        }
+
+        function showLanguageSettings() {
+            document.getElementById('languagePanel').style.display = 'block';
+        }
+
+        function hideLanguageSettings() {
+            document.getElementById('languagePanel').style.display = 'none';
+        }
+
+        async function updateLanguagePreferences() {
+            const textLang = document.getElementById('userTextLanguage').value;
+            const voiceLang = document.getElementById('userVoiceLanguage').value;
+            
+            try {
+                // Validate language selections
+                const validLanguages = ['en', 'fr', 'ar'];
+                if (!validLanguages.includes(textLang) || !validLanguages.includes(voiceLang)) {
+                    throw new Error('Invalid language selection');
+                }
+                
+                // Save to localStorage immediately for instant persistence
+                const preferences = {
+                    textLanguage: textLang,
+                    voiceLanguage: voiceLang,
+                    groupId: currentGroupId,
+                    lastUpdated: new Date().toISOString()
+                };
+                
+                localStorage.setItem('groupLanguagePreferences', JSON.stringify(preferences));
+                localStorage.setItem('userTextLanguage', textLang);
+                localStorage.setItem('userVoiceLanguage', voiceLang);
+                
+                // Store the preferences globally for immediate use
+                window.userPreferredLanguage = textLang;
+                window.userVoiceLanguage = voiceLang;
+                
+                // Create form data for API request
+                const formData = new FormData();
+                formData.append('preferred_language', textLang);
+                formData.append('voice_language', voiceLang);
+                
+                // Show loading state
+                const saveButton = document.querySelector('button[onclick="updateLanguagePreferences()"]');
+                const originalText = saveButton.innerHTML;
+                saveButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+                saveButton.disabled = true;
+                
+                // API request with retry logic
+                let retryCount = 0;
+                const maxRetries = 3;
+                
+                const makeRequest = async () => {
+                    const response = await fetch(`/api/groups/${currentGroupId}/update-preferences`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    return response.json();
+                };
+                
+                let result;
+                while (retryCount < maxRetries) {
+                    try {
+                        result = await makeRequest();
+                        break;
+                    } catch (error) {
+                        retryCount++;
+                        if (retryCount >= maxRetries) {
+                            throw error;
+                        }
+                        // Wait before retry
+                        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                    }
+                }
+                
+                // Restore button state
+                saveButton.innerHTML = originalText;
+                saveButton.disabled = false;
+                
+                // Hide the language panel
+                hideLanguageSettings();
+                
+                // Show enhanced success message
+                showNotification(`
+                    <i class="fas fa-check-circle me-2"></i>
+                    <strong>Language preferences saved!</strong><br>
+                    <small>Text: ${getLanguageName(textLang)} • Voice: ${getLanguageName(voiceLang)}</small>
+                `, 'success', 4000);
+                
+                // Update UI elements to reflect new preferences
+                updateUILanguageIndicators(textLang, voiceLang);
+                
+                console.log('Language preferences updated successfully:', { textLang, voiceLang, result });
+                
+            } catch (error) {
+                console.error('Error updating preferences:', error);
+                
+                // Restore button state
+                const saveButton = document.querySelector('button[onclick="updateLanguagePreferences()"]');
+                if (saveButton) {
+                    saveButton.innerHTML = '<i class="fas fa-save"></i> Save';
+                    saveButton.disabled = false;
+                }
+                
+                // Show error notification
+                showNotification(`
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Failed to save preferences:</strong><br>
+                    <small>${error.message}</small>
+                `, 'danger', 5000);
+            }
+        }
+        
+        // Voice playback functions
+        function playVoiceMessage(audioUrl, buttonElement) {
+            console.log('playVoiceMessage called with:', { audioUrl, buttonElement });
+            
+            if (!audioUrl) {
+                console.warn('No audio URL provided');
+                alert('Audio file not available');
+                return;
+            }
+            
+            console.log('Playing voice message:', audioUrl);
+            
+            // Stop any currently playing audio
+            if (window.currentAudio) {
+                window.currentAudio.pause();
+                window.currentAudio.currentTime = 0;
+                
+                // Reset previous button
+                const prevBtn = document.querySelector('.play-voice-btn.playing');
+                if (prevBtn) {
+                    prevBtn.classList.remove('playing');
+                    prevBtn.innerHTML = '<i class="fas fa-play"></i>';
+                }
+            }
+            
+            try {
+                // Construct full URL if needed
+                let fullUrl = audioUrl;
+                if (!audioUrl.startsWith('http') && !audioUrl.startsWith('/')) {
+                    fullUrl = '/' + audioUrl;
+                }
+                
+                console.log('Creating audio element with URL:', fullUrl);
+                const audio = new Audio(fullUrl);
+                window.currentAudio = audio;
+                
+                if (buttonElement) {
+                    buttonElement.classList.add('playing');
+                    buttonElement.innerHTML = '<i class="fas fa-pause"></i>';
+                    buttonElement.disabled = true;
+                }
+                
+                audio.onloadstart = function() {
+                    console.log('Audio loading started');
+                };
+                
+                audio.oncanplaythrough = function() {
+                    console.log('Audio can play through');
+                    if (buttonElement) {
+                        buttonElement.disabled = false;
+                    }
+                };
+                
+                audio.onended = function() {
+                    console.log('Audio playback ended');
+                    if (buttonElement) {
+                        buttonElement.classList.remove('playing');
+                        buttonElement.innerHTML = '<i class="fas fa-play"></i>';
+                        buttonElement.disabled = false;
+                    }
+                    window.currentAudio = null;
+                };
+                
+                audio.onerror = function(e) {
+                    console.error('Error playing audio:', e);
+                    console.error('Audio URL was:', fullUrl);
+                    console.error('Audio error details:', {
+                        error: audio.error,
+                        networkState: audio.networkState,
+                        readyState: audio.readyState
+                    });
+                    
+                    if (buttonElement) {
+                        buttonElement.classList.remove('playing');
+                        buttonElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                        buttonElement.disabled = false;
+                    }
+                    window.currentAudio = null;
+                    alert(`Failed to play audio. Error: ${audio.error ? audio.error.message : 'Unknown error'}`);
+                };
+                
+                // Add click handler to pause if already playing
+                if (buttonElement) {
+                    buttonElement.onclick = function(e) {
+                        e.preventDefault();
+                        if (audio.paused) {
+                            audio.play().catch(error => {
+                                console.error('Error starting audio playback:', error);
+                                alert('Failed to play audio. Please check your browser audio permissions.');
+                            });
+                        } else {
+                            audio.pause();
+                            buttonElement.classList.remove('playing');
+                            buttonElement.innerHTML = '<i class="fas fa-play"></i>';
+                        }
+                    };
+                }
+                
+                audio.play().catch(error => {
+                    console.error('Error playing audio:', error);
+                    console.error('Audio URL was:', fullUrl);
+                    if (buttonElement) {
+                        buttonElement.classList.remove('playing');
+                        buttonElement.innerHTML = '<i class="fas fa-play"></i>';
+                        buttonElement.disabled = false;
+                    }
+                    window.currentAudio = null;
+                    alert('Failed to play audio. Please check your browser audio permissions.');
+                });
+                
+            } catch (error) {
+                console.error('Error creating audio element:', error);
+                if (buttonElement) {
+                    buttonElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                    buttonElement.disabled = false;
+                }
+                alert('Error creating audio player');
+            }
+        }
+        
+        function playVoiceInLanguage(audioUrl, language) {
+            console.log(`Playing voice in ${language}:`, audioUrl);
+            playVoiceMessage(audioUrl);
+        }
+        
+        function getLanguageName(code) {
+            const languageNames = {
+                'en': 'English',
+                'es': 'Spanish', 
+                'fr': 'French',
+                'de': 'German',
+                'it': 'Italian',
+                'pt': 'Portuguese',
+                'ru': 'Russian',
+                'ja': 'Japanese',
+                'ko': 'Korean',
+                'zh': 'Chinese',
+                'ar': 'Arabic',
+                'hi': 'Hindi',
+                'tr': 'Turkish',
+                'pl': 'Polish',
+                'nl': 'Dutch',
+                'sv': 'Swedish',
+                'da': 'Danish',
+                'no': 'Norwegian',
+                'fi': 'Finnish'
+            };
+            return languageNames[code] || code.toUpperCase();
+        }
+        
+        // Get display text based on user's preferred language
+        function getDisplayText(originalText, originalLang, translationsCache) {
+            const userLanguage = window.userPreferredLanguage || 'en';
+            
+            // If user language matches original, return original
+            if (userLanguage === originalLang) {
+                return { text: originalText, isTranslated: false };
+            }
+            
+            // If translation exists, return it
+            if (translationsCache && translationsCache[userLanguage]) {
+                return { text: translationsCache[userLanguage], isTranslated: true };
+            }
+            
+            // Return original if no translation available
+            return { text: originalText, isTranslated: false };
+        }
+        
+        // Get audio URL for user's preferred language
+        function getAudioUrlForLanguage(audioUrls, userLang, originalLang) {
+            console.log('🎯 AUDIO URL SELECTION LOGIC:', {
+                step: 'Function called',
+                audioUrls: audioUrls,
+                userLang: userLang,
+                originalLang: originalLang,
+                audioUrlsType: typeof audioUrls
+            });
+            
+            if (!audioUrls) {
+                console.log('❌ No audio URLs available');
+                return null;
+            }
+            
+            // Try user's preferred language first
+            if (audioUrls[userLang]) {
+                console.log(`✅ Found audio for user language: ${userLang} -> ${audioUrls[userLang]}`);
+                return audioUrls[userLang];
+            }
+            
+            // Fallback to original language
+            if (audioUrls[originalLang]) {
+                console.log(`⚠️ Falling back to original language: ${originalLang} -> ${audioUrls[originalLang]}`);
+                return audioUrls[originalLang];
+            }
+            
+            // Return any available audio
+            const availableUrls = Object.values(audioUrls);
+            const fallbackUrl = availableUrls.length > 0 ? availableUrls[0] : null;
+            console.log(`⚠️ Using fallback audio: ${fallbackUrl}`);
+            return fallbackUrl;
+        }
+        
+        // Format duration in mm:ss
+        function formatDuration(seconds) {
+            if (!seconds || seconds <= 0) return '0:00';
+            
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+        
+        function showNotification(message, type = 'info', duration = 3000) {
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 320px; max-width: 450px;';
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(notification);
+            
+            // Auto remove after specified duration
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, duration);
+        }
+        
+        function updateUILanguageIndicators(textLang, voiceLang) {
+            // Update any UI elements that show current language preferences
+            const languageButton = document.querySelector('button[onclick="showLanguageSettings()"]');
+            if (languageButton) {
+                languageButton.innerHTML = `<i class="fas fa-language"></i> ${getLanguageName(textLang)}`;
+            }
+        }
+        
+        function loadLanguagePreferences() {
+            try {
+                // Load from localStorage
+                const saved = localStorage.getItem('groupLanguagePreferences');
+                if (saved) {
+                    const preferences = JSON.parse(saved);
+                    
+                    // Set UI values
+                    const textSelect = document.getElementById('userTextLanguage');
+                    const voiceSelect = document.getElementById('userVoiceLanguage');
+                    
+                    if (textSelect && preferences.textLanguage) {
+                        textSelect.value = preferences.textLanguage;
+                        window.userPreferredLanguage = preferences.textLanguage;
+                    }
+                    
+                    if (voiceSelect && preferences.voiceLanguage) {
+                        voiceSelect.value = preferences.voiceLanguage;
+                        window.userVoiceLanguage = preferences.voiceLanguage;
+                    }
+                    
+                    console.log('Language preferences loaded from localStorage:', preferences);
+                }
+                
+                // Also load individual preferences as fallback
+                const textLang = localStorage.getItem('userTextLanguage');
+                const voiceLang = localStorage.getItem('userVoiceLanguage');
+                
+                if (textLang && !window.userPreferredLanguage) {
+                    window.userPreferredLanguage = textLang;
+                    const textSelect = document.getElementById('userTextLanguage');
+                    if (textSelect) textSelect.value = textLang;
+                }
+                
+                if (voiceLang && !window.userVoiceLanguage) {
+                    window.userVoiceLanguage = voiceLang;
+                    const voiceSelect = document.getElementById('userVoiceLanguage');
+                    if (voiceSelect) voiceSelect.value = voiceLang;
+                }
+                
+            } catch (error) {
+                console.error('Error loading language preferences:', error);
+                // Set defaults
+                window.userPreferredLanguage = 'en';
+                window.userVoiceLanguage = 'en';
+            }
+        }
+
+        function handleTyping() {
+            if (!currentGroupId || !websocket) return;
+            
+            // Send typing indicator
+            websocket.send(JSON.stringify({
+                type: 'typing',
+                group_id: currentGroupId,
+                is_typing: true
+            }));
+            
+            // Clear existing timer
+            clearTimeout(typingTimer);
+            
+            // Set timer to stop typing indicator
+            typingTimer = setTimeout(stopTyping, 2000);
+        }
+
+        function stopTyping() {
+            if (!currentGroupId || !websocket) return;
+            
+            websocket.send(JSON.stringify({
+                type: 'typing',
+                group_id: currentGroupId,
+                is_typing: false
+            }));
+        }
+
+        function handleTypingIndicator(data) {
+            const container = document.getElementById('typingIndicators');
+            const indicatorId = `typing-${data.user_id}`;
+            
+            if (data.is_typing) {
+                if (!document.getElementById(indicatorId)) {
+                    const indicator = document.createElement('div');
+                    indicator.id = indicatorId;
+                    indicator.className = 'typing-indicator';
+                    indicator.innerHTML = `<i class="fas fa-circle text-primary me-1" style="font-size: 0.5em;"></i>${data.user_name} is typing...`;
+                    container.appendChild(indicator);
+                }
+            } else {
+                const indicator = document.getElementById(indicatorId);
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
+        }
+
+        async function toggleReaction(reaction, messageId) {
+            if (!currentGroupId) return;
+            
+            try {
+                const formData = new FormData();
+                formData.append('message_id', messageId);
+                formData.append('reaction', reaction);
+                
+                await fetch(`/api/groups/${currentGroupId}/react`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+            } catch (error) {
+                console.error('Error toggling reaction:', error);
+            }
+        }
+
+        function updateMessageReactions(data) {
+            const reactionsContainer = document.getElementById(`reactions-${data.message_id}`);
+            if (reactionsContainer) {
+                // Reload the message reactions - simplified for now
+                // In a full implementation, you'd update the specific reaction
+                loadGroupMessages(currentGroupId);
+            }
+        }
+
+        function toggleTranslation(element) {
+            const originalContent = element.nextElementSibling;
+            const toggleText = element.querySelector('.toggle-text');
+            
+            if (originalContent.style.display === 'none') {
+                originalContent.style.display = 'block';
+                if (toggleText) toggleText.textContent = 'Hide original';
+                element.querySelector('i').className = 'fas fa-eye-slash';
+            } else {
+                originalContent.style.display = 'none';
+                if (toggleText) toggleText.textContent = 'Show original';
+                element.querySelector('i').className = 'fas fa-eye';
+            }
+        }
+        
+        function switchMessageLanguage(element, messageId, targetLang) {
+            const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (!messageElement) return;
+            
+            try {
+                const translations = JSON.parse(messageElement.dataset.translations || '{}');
+                const translatedContent = translations[targetLang];
+                
+                if (translatedContent) {
+                    const messageContent = messageElement.querySelector('.message-content');
+                    messageContent.textContent = translatedContent;
+                    
+                    // Update translation info
+                    const translationInfo = messageElement.querySelector('.translation-info small');
+                    if (translationInfo) {
+                        translationInfo.innerHTML = `
+                            <i class="fas fa-language"></i>
+                            Now showing in ${getLanguageName(targetLang)}
+                        `;
+                    }
+                    
+                    // Visual feedback
+                    element.style.backgroundColor = '#007bff';
+                    element.style.color = 'white';
+                    
+                    setTimeout(() => {
+                        element.style.backgroundColor = '';
+                        element.style.color = '';
+                    }, 1500);
+                }
+            } catch (error) {
+                console.error('Error switching message language:', error);
+            }
+        }
+
+        function updateOnlineCount(data) {
+            if (data.group_id === currentGroupId) {
+                const groupInfo = document.getElementById('groupInfo');
+                const currentText = groupInfo.textContent;
+                const memberCount = currentText.split(' ')[0];
+                groupInfo.textContent = `${memberCount} members • ${data.count} online`;
+            }
+        }
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function showGroupInfo() {
+            // Load and show group information modal
+            if (currentGroupId) {
+                loadGroupDetails(currentGroupId).then(() => {
+                    const modal = new bootstrap.Modal(document.getElementById('groupInfoModal'));
+                    modal.show();
+                });
+            }
+        }
+
+        function showAddMemberModal() {
+            // Show add member modal
+            if (currentGroupId) {
+                const modal = new bootstrap.Modal(document.getElementById('addMemberModal'));
+                modal.show();
+            } else {
+                alert('Please select a group first');
+            }
+        }
+
+        async function addMemberToGroup() {
+            const email = document.getElementById('memberEmailInput').value.trim();
+            const role = document.getElementById('memberRoleSelect').value;
+            const textLang = document.getElementById('memberTextLangSelect').value;
+            const voiceLang = document.getElementById('memberVoiceLangSelect').value;
+            
+            if (!email) {
+                alert('Please enter a valid email address');
+                return;
+            }
+            
+            if (!currentGroupId) {
+                alert('No group selected');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('user_email', email);
+                formData.append('role', role);
+                formData.append('preferred_language', textLang);
+                formData.append('voice_language', voiceLang);
+                
+                const response = await fetch(`/api/groups/${currentGroupId}/add-member`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Close modal and clear form
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addMemberModal'));
+                    modal.hide();
+                    document.getElementById('addMemberForm').reset();
+                    
+                    alert('Member added successfully!');
+                    
+                    // Refresh group details
+                    loadGroupDetails(currentGroupId);
+                } else {
+                    alert(result.detail || 'Failed to add member');
+                }
+            } catch (error) {
+                console.error('Error adding member:', error);
+                alert('Error adding member. Please try again.');
+            }
+        }
+
+        function startGroupCall() {
+            // Implement group voice call functionality
+            alert('Group voice call feature - Coming soon!');
+        }
+
+        function handleGroupNotification(data) {
+            // Handle group notifications (member added, removed, etc.)
+            console.log('Group notification:', data);
+            
+            // Show toast notification
+            const notification = document.createElement('div');
+            notification.className = 'toast position-fixed top-0 end-0 m-3';
+            notification.innerHTML = `
+                <div class="toast-header">
+                    <strong class="me-auto">Group Update</strong>
+                    <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                </div>
+                <div class="toast-body">
+                    ${data.message || 'Group updated'}
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            const toast = new bootstrap.Toast(notification);
+            toast.show();
+            
+            // Remove notification after it's hidden
+            notification.addEventListener('hidden.bs.toast', () => {
+                notification.remove();
+            });
+        }
+    </script>
+</body>
+</html>

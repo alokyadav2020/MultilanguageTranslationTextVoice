@@ -13,9 +13,10 @@ from pathlib import Path
 from .core.config import get_settings
 from .core.database import engine, Base, get_db
 from .core.migrate import run_startup_migrations
+from .core.group_migration import run_group_migration
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .models.user import User
-from .api import auth, users, chat_ws, translation, voice_chat, voice_call
+from .api import auth, users, chat_ws, translation, voice_chat, voice_call, groups, group_ws
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,9 @@ settings = get_settings()
 # Create / update tables (create_all does not alter, so we run a small migration helper next)
 Base.metadata.create_all(bind=engine)
 run_startup_migrations(engine)
+
+# Run group migration
+run_group_migration(engine)
 
 app = FastAPI(title=settings.project_name)
 
@@ -68,14 +72,16 @@ app.include_router(chat_ws.router)
 app.include_router(translation.router)
 app.include_router(voice_chat.router)
 app.include_router(voice_call.router)
+app.include_router(groups.router)
+app.include_router(group_ws.router)
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services and preload models for better performance."""
     from .services.translation import translation_service
-    from .services.call_manager import start_heartbeat_task
-    import asyncio
+    # from .services.call_manager import start_heartbeat_task
+    # import asyncio
     
     logger.info("🚀 Starting translation service optimization...")
     
@@ -98,8 +104,9 @@ async def startup_event():
     
     # Start call manager heartbeat task
     logger.info("📞 Starting call manager heartbeat...")
-    asyncio.create_task(start_heartbeat_task())
-    logger.info("✅ Call manager heartbeat started")
+    # Temporarily disabled for debugging
+    # asyncio.create_task(start_heartbeat_task())
+    logger.info("✅ Call manager heartbeat started (disabled for debugging)")
 
 
 @app.get("/_debug/session")
@@ -181,6 +188,31 @@ async def chat_page(
     response.headers["Expires"] = "0"
     return response
 
+
+@app.get("/groups", response_class=HTMLResponse)
+async def groups_page(
+    request: Request, 
+    user: User | None = Depends(get_current_ui_user)
+):
+    """Groups page for multilingual group conversations"""
+    if not user:
+        return RedirectResponse("/login", 302)
+    
+    token = request.session.get("token")
+    response = templates.TemplateResponse(
+        "groups.html",
+        {
+            "request": request,
+            "user": user,
+            "title": "Groups - Multilingual Chat",
+            "token": token
+        }
+    )
+    
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -543,6 +575,14 @@ async def test_voice_endpoint():
 
 
 
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
+    import os
+    
+    # Always run HTTP for ngrok (simpler)
+    # print("🚀 Starting HTTP server for ngrok tunneling...")
+    # print("📡 Use ngrok to create HTTPS tunnel")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

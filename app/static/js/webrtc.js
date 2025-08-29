@@ -2,8 +2,60 @@
 
 /**
  * WebRTC Voice Call Implementation
- * Handles peer-to-peer audio communication for voice calls
- */
+ * Handles peer-to-peer audio communication for voice        // Connection state change han        // ICE connection state change handler
+        this.peerConnection.oniceconnectionstatechange = () => {
+            this.iceConnectionState = this.peerConnection.iceConnectionState;
+            console.log('🧊 ICE connection state:', this.iceConnectionState);
+            
+            // Add detailed logging for different ICE states
+            switch (this.iceConnectionState) {
+                case 'connected':
+                    console.log('✅ ICE connected - checking audio tracks...');
+                    this.debugAudioTracks();
+                    // Start monitoring audio transmission
+                    this.startAudioLevelMonitoring();
+                    break;
+                case 'disconnected':
+                    console.warn('⚠️ ICE disconnected - audio may stop working');
+                    this.stopAudioLevelMonitoring();
+                    break;
+                case 'failed':
+                    console.error('❌ ICE connection failed - audio will not work');
+                    this.stopAudioLevelMonitoring();
+                    break;
+                case 'checking':
+                    console.log('🔍 ICE checking connectivity...');
+                    break;
+            }
+            
+            if (this.onIceConnectionStateChange) {
+                this.onIceConnectionStateChange(this.iceConnectionState);
+            }
+        };     this.peerConnection.onconnectionstatechange = () => {
+            this.connectionState = this.peerConnection.connectionState;
+            console.log('🔄 Connection state:', this.connectionState);
+            
+            // Debug all senders and receivers when connection state changes
+            const senders = this.peerConnection.getSenders();
+            const receivers = this.peerConnection.getReceivers();
+            console.log(`📊 Connection state ${this.connectionState}: ${senders.length} senders, ${receivers.length} receivers`);
+            
+            senders.forEach((sender, i) => {
+                if (sender.track) {
+                    console.log(`📤 Sender ${i}:`, sender.track.kind, sender.track.enabled, sender.track.readyState);
+                }
+            });
+            
+            receivers.forEach((receiver, i) => {
+                if (receiver.track) {
+                    console.log(`📥 Receiver ${i}:`, receiver.track.kind, receiver.track.enabled, receiver.track.readyState);
+                }
+            });
+            
+            if (this.onConnectionStateChange) {
+                this.onConnectionStateChange(this.connectionState);
+            }
+        };*/
 
 class WebRTCManager {
     constructor() {
@@ -13,6 +65,8 @@ class WebRTCManager {
         this.websocket = null;
         this.isInitiator = false;
         this.callId = null;
+        this.isInitialized = false;
+        this.initializationPromise = null;
         this.config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -65,23 +119,60 @@ class WebRTCManager {
      * Initialize WebRTC connection
      */
     async initialize(callId, websocket, isInitiator = false) {
+        // Prevent multiple initializations
+        if (this.isInitialized) {
+            console.log('⚠️ WebRTC already initialized');
+            return true;
+        }
+        
+        if (this.initializationPromise) {
+            console.log('⏳ WebRTC initialization in progress, waiting...');
+            return await this.initializationPromise;
+        }
+        
+        this.initializationPromise = this._performInitialization(callId, websocket, isInitiator);
+        return await this.initializationPromise;
+    }
+
+    /**
+     * Internal initialization method
+     */
+    async _performInitialization(callId, websocket, isInitiator) {
         try {
             this.callId = callId;
             this.websocket = websocket;
             this.isInitiator = isInitiator;
             
-            console.log('🔗 Initializing WebRTC for call:', callId);
+            console.log('🔗 Initializing WebRTC for call:', callId, 'isInitiator:', isInitiator);
             
-            // Create peer connection
+            // Create peer connection FIRST
             this.peerConnection = new RTCPeerConnection(this.config);
             this.setupPeerConnectionHandlers();
             
-            // Get user media
+            // Get user media and add tracks BEFORE creating offer
+            console.log('🎤 Getting user media...');
             await this.getUserMedia();
             
-            // If initiator, create and send offer
+            // Verify tracks were added
+            const senders = this.peerConnection.getSenders();
+            console.log('📤 Senders after getUserMedia:', senders.length);
+            
+            if (senders.length === 0) {
+                throw new Error('No audio tracks were added to peer connection');
+            }
+            
+            // Add a small delay to ensure everything is set up
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Mark as initialized before creating offer
+            this.isInitialized = true;
+            
+            // If initiator, create and send offer AFTER tracks are added
             if (this.isInitiator) {
+                console.log('📞 Creating offer as initiator...');
                 await this.createOffer();
+            } else {
+                console.log('📞 Waiting for offer as responder...');
             }
             
             // Start collecting statistics
@@ -92,6 +183,8 @@ class WebRTCManager {
             
         } catch (error) {
             console.error('❌ WebRTC initialization failed:', error);
+            this.isInitialized = false;
+            this.initializationPromise = null;
             if (this.onError) {
                 this.onError('initialization', error);
             }
@@ -116,8 +209,18 @@ class WebRTCManager {
 
         // Remote stream handler
         this.peerConnection.ontrack = (event) => {
-            console.log('🎵 Received remote stream');
+            console.log('🎵 Received remote track:', event.track.kind);
+            console.log('🎵 Track details:', {
+                kind: event.track.kind,
+                enabled: event.track.enabled,
+                muted: event.track.muted,
+                readyState: event.track.readyState,
+                settings: event.track.getSettings()
+            });
+            
             this.remoteStream = event.streams[0];
+            console.log('🎵 Remote stream tracks:', this.remoteStream.getTracks().length);
+            
             if (this.onRemoteStreamReceived) {
                 this.onRemoteStreamReceived(this.remoteStream);
             }
@@ -169,12 +272,43 @@ class WebRTCManager {
     async getUserMedia() {
         try {
             console.log('🎤 Requesting microphone access...');
+            console.log('🎤 Audio constraints:', this.audioConstraints);
             
             this.localStream = await navigator.mediaDevices.getUserMedia(this.audioConstraints);
+            console.log('✅ Got local stream with tracks:', this.localStream.getTracks().length);
+            
+            // Log each track
+            this.localStream.getTracks().forEach((track, index) => {
+                console.log(`🎤 Local track ${index}:`, {
+                    kind: track.kind,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                    label: track.label,
+                    settings: track.getSettings()
+                });
+            });
             
             // Add local stream to peer connection
             this.localStream.getTracks().forEach(track => {
-                this.peerConnection.addTrack(track, this.localStream);
+                console.log('🎤 Adding local track:', track.kind, track.enabled, track.readyState);
+                const sender = this.peerConnection.addTrack(track, this.localStream);
+                console.log('📤 Track added to sender:', sender);
+            });
+            
+            // Debug: Check all senders
+            const senders = this.peerConnection.getSenders();
+            console.log('📤 Total senders after adding tracks:', senders.length);
+            senders.forEach((sender, index) => {
+                if (sender.track) {
+                    console.log(`📤 Sender ${index}:`, {
+                        kind: sender.track.kind,
+                        enabled: sender.track.enabled,
+                        readyState: sender.track.readyState
+                    });
+                } else {
+                    console.log(`📤 Sender ${index}: No track`);
+                }
             });
             
             console.log('✅ Microphone access granted');
@@ -212,6 +346,16 @@ class WebRTCManager {
         try {
             console.log('📞 Creating offer...');
             
+            // Check peer connection state to avoid "wrong state" errors
+            if (this.peerConnection.signalingState !== 'stable') {
+                console.warn(`⚠️ Cannot create offer in signaling state: ${this.peerConnection.signalingState}`);
+                if (this.peerConnection.signalingState === 'have-remote-offer') {
+                    console.log('📞 Already have remote offer, should create answer instead');
+                    return;
+                }
+                throw new Error(`Cannot create offer in state: ${this.peerConnection.signalingState}`);
+            }
+            
             const offer = await this.peerConnection.createOffer({
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: false
@@ -240,7 +384,25 @@ class WebRTCManager {
      */
     async handleOffer(sdp) {
         try {
+            // Wait for initialization if it's in progress
+            if (!this.isInitialized && this.initializationPromise) {
+                console.log('⏳ Waiting for WebRTC initialization before handling offer...');
+                await this.initializationPromise;
+            }
+            
+            if (!this.isInitialized || !this.peerConnection) {
+                throw new Error('WebRTC not initialized when handling offer');
+            }
+            
             console.log('📞 Handling incoming offer...');
+            console.log(`📊 Current signaling state: ${this.peerConnection.signalingState}`);
+            
+            // Check if we can handle an offer in current state
+            if (this.peerConnection.signalingState !== 'stable' && 
+                this.peerConnection.signalingState !== 'have-local-offer') {
+                console.warn(`⚠️ Cannot handle offer in signaling state: ${this.peerConnection.signalingState}`);
+                throw new Error(`Cannot handle offer in state: ${this.peerConnection.signalingState}`);
+            }
             
             const offer = new RTCSessionDescription({
                 type: 'offer',
@@ -248,6 +410,25 @@ class WebRTCManager {
             });
             
             await this.peerConnection.setRemoteDescription(offer);
+            console.log('✅ Remote offer set successfully');
+            
+            // Ensure we have our own audio tracks added (for call receiver)
+            if (!this.localStream) {
+                console.log('🎤 Getting user media for call receiver...');
+                await this.getUserMedia();
+            }
+            
+            // Verify tracks are added to peer connection
+            const senders = this.peerConnection.getSenders();
+            console.log(`📊 Current senders before answer: ${senders.length}`);
+            
+            if (senders.length === 0 && this.localStream) {
+                console.log('🔗 Adding tracks to peer connection for receiver...');
+                this.localStream.getTracks().forEach(track => {
+                    this.peerConnection.addTrack(track, this.localStream);
+                    console.log(`➕ Added ${track.kind} track for receiver`);
+                });
+            }
             
             // Create and send answer
             const answer = await this.peerConnection.createAnswer();
@@ -431,6 +612,73 @@ class WebRTCManager {
     }
 
     /**
+     * Debug audio tracks status
+     */
+    debugAudioTracks() {
+        console.log('🔍 Debugging audio tracks...');
+        
+        // Check local stream
+        if (this.localStream) {
+            const localAudioTracks = this.localStream.getAudioTracks();
+            console.log(`🎤 Local audio tracks: ${localAudioTracks.length}`);
+            localAudioTracks.forEach((track, i) => {
+                console.log(`🎤 Local track ${i}:`, {
+                    kind: track.kind,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                    label: track.label
+                });
+            });
+        } else {
+            console.warn('⚠️ No local stream available');
+        }
+        
+        // Check remote stream
+        if (this.remoteStream) {
+            const remoteAudioTracks = this.remoteStream.getAudioTracks();
+            console.log(`🎵 Remote audio tracks: ${remoteAudioTracks.length}`);
+            remoteAudioTracks.forEach((track, i) => {
+                console.log(`🎵 Remote track ${i}:`, {
+                    kind: track.kind,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                    label: track.label
+                });
+            });
+        } else {
+            console.warn('⚠️ No remote stream available');
+        }
+        
+        // Check senders and receivers
+        const senders = this.peerConnection.getSenders();
+        const receivers = this.peerConnection.getReceivers();
+        
+        console.log(`📊 WebRTC Stats: ${senders.length} senders, ${receivers.length} receivers`);
+        
+        senders.forEach((sender, i) => {
+            if (sender.track && sender.track.kind === 'audio') {
+                console.log(`📤 Audio sender ${i}:`, {
+                    enabled: sender.track.enabled,
+                    readyState: sender.track.readyState,
+                    muted: sender.track.muted
+                });
+            }
+        });
+        
+        receivers.forEach((receiver, i) => {
+            if (receiver.track && receiver.track.kind === 'audio') {
+                console.log(`📥 Audio receiver ${i}:`, {
+                    enabled: receiver.track.enabled,
+                    readyState: receiver.track.readyState,
+                    muted: receiver.track.muted
+                });
+            }
+        });
+    }
+
+    /**
      * Handle connection failure
      */
     async handleConnectionFailure() {
@@ -491,8 +739,15 @@ class WebRTCManager {
     close() {
         console.log('🔌 Closing WebRTC connection...');
         
+        // Reset initialization state
+        this.isInitialized = false;
+        this.initializationPromise = null;
+        
         // Stop statistics collection
         this.stopStatsCollection();
+        
+        // Stop audio level monitoring
+        this.stopAudioLevelMonitoring();
         
         // Stop local stream tracks
         if (this.localStream) {
@@ -527,6 +782,113 @@ class WebRTCManager {
             stats: this.stats,
             quality: this.getConnectionQuality()
         };
+    }
+
+    /**
+     * Monitor audio levels for both local and remote streams
+     */
+    startAudioLevelMonitoring() {
+        if (this.audioLevelMonitor) {
+            return; // Already monitoring
+        }
+        
+        console.log('📊 Starting audio level monitoring...');
+        
+        this.audioLevelMonitor = setInterval(() => {
+            this.checkAudioLevels();
+        }, 3000); // Check every 3 seconds
+    }
+
+    /**
+     * Stop audio level monitoring
+     */
+    stopAudioLevelMonitoring() {
+        if (this.audioLevelMonitor) {
+            clearInterval(this.audioLevelMonitor);
+            this.audioLevelMonitor = null;
+            console.log('📊 Stopped audio level monitoring');
+        }
+    }
+
+    /**
+     * Check current audio levels and transmission stats
+     */
+    async checkAudioLevels() {
+        try {
+            console.log('📊 === AUDIO TRANSMISSION CHECK ===');
+            
+            // Check local audio track status
+            if (this.localStream) {
+                const audioTrack = this.localStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    console.log('🎤 Local audio:', {
+                        enabled: audioTrack.enabled,
+                        muted: audioTrack.muted,
+                        readyState: audioTrack.readyState,
+                        label: audioTrack.label
+                    });
+                }
+            }
+
+            // Check remote audio track status
+            if (this.remoteStream) {
+                const audioTrack = this.remoteStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    console.log('🔊 Remote audio:', {
+                        enabled: audioTrack.enabled,
+                        muted: audioTrack.muted,
+                        readyState: audioTrack.readyState,
+                        label: audioTrack.label
+                    });
+                }
+            }
+
+            // Check WebRTC transmission stats
+            if (this.peerConnection && this.peerConnection.connectionState === 'connected') {
+                const stats = await this.peerConnection.getStats();
+                let inboundAudio = null;
+                let outboundAudio = null;
+                
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.mediaType === 'audio') {
+                        inboundAudio = {
+                            packetsReceived: report.packetsReceived || 0,
+                            packetsLost: report.packetsLost || 0,
+                            bytesReceived: report.bytesReceived || 0,
+                            jitter: report.jitter || 0
+                        };
+                    } else if (report.type === 'outbound-rtp' && report.mediaType === 'audio') {
+                        outboundAudio = {
+                            packetsSent: report.packetsSent || 0,
+                            bytesSent: report.bytesSent || 0,
+                            headerBytesSent: report.headerBytesSent || 0
+                        };
+                    }
+                });
+                
+                if (outboundAudio && outboundAudio.packetsSent > 0) {
+                    console.log('📤 Audio SENDING:', outboundAudio);
+                } else {
+                    console.log('📤 Audio NOT SENDING - no outbound packets');
+                }
+                
+                if (inboundAudio && inboundAudio.packetsReceived > 0) {
+                    console.log('📥 Audio RECEIVING:', inboundAudio);
+                } else {
+                    console.log('📥 Audio NOT RECEIVING - no inbound packets');
+                }
+                
+                // Show overall transmission status
+                const isSending = outboundAudio && outboundAudio.packetsSent > 0;
+                const isReceiving = inboundAudio && inboundAudio.packetsReceived > 0;
+                
+                console.log(`📊 TRANSMISSION STATUS: Sending: ${isSending ? '✅' : '❌'}, Receiving: ${isReceiving ? '✅' : '❌'}`);
+            }
+            
+            console.log('📊 === END TRANSMISSION CHECK ===');
+        } catch (error) {
+            console.warn('⚠️ Error checking audio levels:', error);
+        }
     }
 }
 

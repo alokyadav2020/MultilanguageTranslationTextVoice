@@ -111,12 +111,9 @@ class VoiceCall {
             // Volume and connection
             volumeSlider: document.getElementById('volume-slider'),
             connectionStatus: document.getElementById('connection-status'),
-            
-            // Translation controls
-            enableTranslation: document.getElementById('enable-translation'),
-            translationSettings: document.getElementById('translation-settings'),
-            myLanguage: document.getElementById('my-language'),
-            translateTo: document.getElementById('translate-to'),
+            testAudioBtn: document.getElementById('test-audio-btn'),
+            testMicBtn: document.getElementById('test-mic-btn'),
+            debugAudioBtn: document.getElementById('debug-audio-btn'),
             
             // Volume indicators
             myVolume: document.getElementById('my-volume'),
@@ -127,8 +124,6 @@ class VoiceCall {
             chatMessages: document.getElementById('chat-messages'),
             chatInput: document.getElementById('chat-input'),
             sendMessage: document.getElementById('send-message'),
-            messageLanguage: document.getElementById('message-language'),
-            autoTranslate: document.getElementById('auto-translate'),
             toggleChat: document.getElementById('toggle-chat'),
             
             // Stats elements
@@ -232,22 +227,6 @@ class VoiceCall {
             this.minimizeWindow();
         });
         
-        // Translation controls
-        this.elements.enableTranslation?.addEventListener('change', (e) => {
-            console.log('🌐 Translation toggled:', e.target.checked);
-            this.toggleTranslation(e.target.checked);
-        });
-        
-        this.elements.myLanguage?.addEventListener('change', (e) => {
-            console.log('🗣️ My language changed to:', e.target.value);
-            this.updateTranslationSettings();
-        });
-        
-        this.elements.translateTo?.addEventListener('change', (e) => {
-            console.log('🔄 Translate to changed to:', e.target.value);
-            this.updateTranslationSettings();
-        });
-        
         // Log which buttons were found
         const buttonElements = [
             'muteBtn', 'speakerBtn', 'chatToggleBtn', 'endCallBtn', 'closeCallBtn', 'minimizeBtn'
@@ -264,6 +243,21 @@ class VoiceCall {
         // Volume control
         this.elements.volumeSlider?.addEventListener('input', (e) => {
             this.setVolume(parseInt(e.target.value));
+        });
+        
+        // Test audio button
+        this.elements.testAudioBtn?.addEventListener('click', () => {
+            this.testAudio();
+        });
+        
+        // Test microphone button
+        this.elements.testMicBtn?.addEventListener('click', () => {
+            this.testMicrophone();
+        });
+        
+        // Debug audio button
+        this.elements.debugAudioBtn?.addEventListener('click', () => {
+            this.debugAudioState();
         });
         
         // Chat functionality
@@ -490,14 +484,6 @@ class VoiceCall {
                 this.handleStatusUpdate(message);
                 break;
                 
-            case 'translated_audio':
-                this.handleTranslatedAudio(message);
-                break;
-                
-            case 'translation_state':
-                this.handleTranslationState(message);
-                break;
-                
             case 'heartbeat_ack':
                 // Keep connection alive
                 break;
@@ -668,11 +654,6 @@ class VoiceCall {
             this.stopRingtone();
             this.stopRingback();
             
-            // Stop voice translation if active
-            if (this.translationEnabled) {
-                this.stopVoiceTranslation();
-            }
-            
             // Close WebRTC
             if (this.webrtc) {
                 this.webrtc.close();
@@ -839,12 +820,343 @@ class VoiceCall {
         if (this.elements.remoteAudio) {
             this.elements.remoteAudio.srcObject = stream;
             this.elements.remoteAudio.volume = this.currentVolume / 100;
+            
+            // Check if we have audio tracks
+            const audioTracks = stream.getAudioTracks();
+            console.log('🎵 Remote audio tracks:', audioTracks.length);
+            audioTracks.forEach((track, index) => {
+                console.log(`🎵 Remote audio track ${index}:`, {
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState,
+                    settings: track.getSettings()
+                });
+            });
+            
+            // Explicitly play the remote audio
+            this.elements.remoteAudio.play().then(() => {
+                console.log('✅ Remote audio playback started');
+            }).catch(error => {
+                console.error('❌ Failed to play remote audio:', error);
+                console.log('🔊 Trying to enable audio after user interaction...');
+                
+                // Show a message to user to click to enable audio
+                this.showAudioPermissionMessage();
+                
+                // Retry after a short delay
+                setTimeout(() => {
+                    this.elements.remoteAudio.play().catch(err => {
+                        console.error('❌ Remote audio retry failed:', err);
+                    });
+                }, 1000);
+            });
+            
+            // Add additional event listeners for debugging
+            this.elements.remoteAudio.addEventListener('loadstart', () => {
+                console.log('🎵 Remote audio load started');
+            });
+            
+            this.elements.remoteAudio.addEventListener('loadeddata', () => {
+                console.log('🎵 Remote audio data loaded');
+            });
+            
+            this.elements.remoteAudio.addEventListener('canplay', () => {
+                console.log('🎵 Remote audio can play');
+                // Try to play again when ready
+                this.elements.remoteAudio.play().catch(err => {
+                    console.log('🔊 Still cannot autoplay, user interaction needed');
+                });
+            });
+            
+            this.elements.remoteAudio.addEventListener('playing', () => {
+                console.log('✅ Remote audio is playing');
+                this.hideAudioPermissionMessage();
+            });
+            
+            this.elements.remoteAudio.addEventListener('pause', () => {
+                console.log('⏸️ Remote audio paused');
+            });
+            
+            this.elements.remoteAudio.addEventListener('error', (e) => {
+                console.error('❌ Remote audio error:', e);
+            });
         }
         
         // Start audio visualization
         if (window.AudioVisualization) {
             window.AudioVisualization.setRemoteStream(stream);
         }
+    }
+
+    /**
+     * Show message to click for audio permission
+     */
+    showAudioPermissionMessage() {
+        if (!this.audioPermissionShown) {
+            this.audioPermissionShown = true;
+            
+            // Create a floating message
+            const message = document.createElement('div');
+            message.id = 'audio-permission-message';
+            message.className = 'alert alert-warning position-fixed';
+            message.style.cssText = `
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 9999;
+                min-width: 300px;
+                text-align: center;
+                cursor: pointer;
+            `;
+            message.innerHTML = `
+                <strong>🔊 Click here to enable audio</strong><br>
+                <small>Browser requires user interaction to play audio</small>
+            `;
+            
+            message.addEventListener('click', () => {
+                if (this.elements.remoteAudio) {
+                    this.elements.remoteAudio.play().then(() => {
+                        console.log('✅ Audio enabled after user click');
+                        this.hideAudioPermissionMessage();
+                    }).catch(err => {
+                        console.error('❌ Still failed to play audio:', err);
+                    });
+                }
+            });
+            
+            document.body.appendChild(message);
+            
+            // Auto-hide after 10 seconds
+            setTimeout(() => {
+                this.hideAudioPermissionMessage();
+            }, 10000);
+        }
+    }
+
+    /**
+     * Hide audio permission message
+     */
+    hideAudioPermissionMessage() {
+        const message = document.getElementById('audio-permission-message');
+        if (message) {
+            message.remove();
+        }
+        this.audioPermissionShown = false;
+    }
+
+    /**
+     * Test audio playback
+     */
+    testAudio() {
+        console.log('🔊 Testing audio...');
+        
+        // Try to play remote audio if available
+        if (this.elements.remoteAudio && this.elements.remoteAudio.srcObject) {
+            console.log('🔊 Testing remote audio playback...');
+            this.elements.remoteAudio.play().then(() => {
+                console.log('✅ Remote audio test successful');
+                this.showTemporaryMessage('✅ Audio test successful', 'success');
+            }).catch(error => {
+                console.error('❌ Remote audio test failed:', error);
+                this.showTemporaryMessage('❌ Audio test failed - ' + error.message, 'danger');
+            });
+        } else {
+            // Play a test tone
+            this.playTestTone();
+        }
+    }
+
+    /**
+     * Play a test tone to verify audio
+     */
+    playTestTone() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.5);
+            
+            console.log('✅ Test tone played');
+            this.showTemporaryMessage('✅ Test tone played - speakers working', 'success');
+            
+        } catch (error) {
+            console.error('❌ Failed to play test tone:', error);
+            this.showTemporaryMessage('❌ Audio test failed - ' + error.message, 'danger');
+        }
+    }
+
+    /**
+     * Show temporary message
+     */
+    showTemporaryMessage(message, type = 'info') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} position-fixed`;
+        alertDiv.style.cssText = `
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+        `;
+        alertDiv.textContent = message;
+        
+        document.body.appendChild(alertDiv);
+        
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 3000);
+    }
+
+    /**
+     * Test microphone
+     */
+    testMicrophone() {
+        console.log('🎤 Testing microphone...');
+        
+        if (this.webrtc && this.webrtc.localStream) {
+            const audioTracks = this.webrtc.localStream.getAudioTracks();
+            
+            if (audioTracks.length > 0) {
+                const track = audioTracks[0];
+                console.log('🎤 Microphone track status:', {
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState
+                });
+                
+                if (track.readyState === 'live' && track.enabled && !track.muted) {
+                    this.showTemporaryMessage('✅ Microphone is working', 'success');
+                    
+                    // Try to measure audio level
+                    this.measureMicrophoneLevel();
+                } else {
+                    this.showTemporaryMessage('❌ Microphone issue detected', 'warning');
+                }
+            } else {
+                this.showTemporaryMessage('❌ No microphone track found', 'danger');
+            }
+        } else {
+            this.showTemporaryMessage('❌ No audio stream available', 'danger');
+        }
+    }
+
+    /**
+     * Measure microphone audio level
+     */
+    measureMicrophoneLevel() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(this.webrtc.localStream);
+            
+            source.connect(analyser);
+            analyser.fftSize = 256;
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            
+            let measurements = 0;
+            let maxLevel = 0;
+            
+            const measureLevel = () => {
+                analyser.getByteFrequencyData(dataArray);
+                
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                maxLevel = Math.max(maxLevel, average);
+                
+                measurements++;
+                
+                if (measurements < 30) { // Measure for about 1 second
+                    requestAnimationFrame(measureLevel);
+                } else {
+                    if (maxLevel > 5) {
+                        this.showTemporaryMessage(`✅ Microphone level detected: ${Math.round(maxLevel)}`, 'success');
+                    } else {
+                        this.showTemporaryMessage('⚠️ Very low microphone level detected', 'warning');
+                    }
+                    
+                    audioContext.close();
+                }
+            };
+            
+            measureLevel();
+            
+        } catch (error) {
+            console.error('❌ Failed to measure microphone level:', error);
+            this.showTemporaryMessage('❌ Could not measure microphone level', 'warning');
+        }
+    }
+
+    /**
+     * Debug current audio state
+     */
+    debugAudioState() {
+        console.log('🔍 === AUDIO DEBUG REPORT ===');
+        
+        // Debug WebRTC state
+        if (this.webrtc) {
+            console.log('📞 WebRTC State:', {
+                connectionState: this.webrtc.connectionState,
+                iceConnectionState: this.webrtc.iceConnectionState,
+                signallingState: this.webrtc.signallingState
+            });
+            
+            // Call WebRTC debug method
+            this.webrtc.debugAudioTracks();
+        } else {
+            console.error('❌ No WebRTC instance available');
+        }
+        
+        // Debug audio elements
+        if (this.elements.remoteAudio) {
+            console.log('🎵 Remote Audio Element:', {
+                src: this.elements.remoteAudio.src,
+                srcObject: !!this.elements.remoteAudio.srcObject,
+                volume: this.elements.remoteAudio.volume,
+                muted: this.elements.remoteAudio.muted,
+                paused: this.elements.remoteAudio.paused,
+                readyState: this.elements.remoteAudio.readyState,
+                networkState: this.elements.remoteAudio.networkState,
+                currentTime: this.elements.remoteAudio.currentTime,
+                duration: this.elements.remoteAudio.duration
+            });
+        } else {
+            console.error('❌ No remote audio element found');
+        }
+        
+        if (this.elements.localAudio) {
+            console.log('🎤 Local Audio Element:', {
+                src: this.elements.localAudio.src,
+                srcObject: !!this.elements.localAudio.srcObject,
+                volume: this.elements.localAudio.volume,
+                muted: this.elements.localAudio.muted,
+                paused: this.elements.localAudio.paused
+            });
+        } else {
+            console.error('❌ No local audio element found');
+        }
+        
+        // Debug call state
+        console.log('📞 Call State:', {
+            callState: this.callState,
+            callId: this.callId,
+            currentVolume: this.currentVolume,
+            isInitiator: this.isInitiator
+        });
+        
+        console.log('🔍 === END AUDIO DEBUG REPORT ===');
+        
+        this.showTemporaryMessage('🔍 Audio debug completed - check console', 'info');
     }
 
     /**
@@ -855,6 +1167,28 @@ class VoiceCall {
         
         if (this.elements.localAudio) {
             this.elements.localAudio.srcObject = stream;
+            // Don't play local audio to avoid feedback
+            this.elements.localAudio.muted = true;
+        }
+        
+        // Verify microphone is working
+        const audioTrack = stream.getAudioTracks()[0];
+        if (audioTrack) {
+            console.log('🎤 Audio track details:', {
+                enabled: audioTrack.enabled,
+                muted: audioTrack.muted,
+                readyState: audioTrack.readyState,
+                settings: audioTrack.getSettings()
+            });
+            
+            // Check if audio is actually being captured
+            if (audioTrack.readyState === 'live') {
+                console.log('✅ Microphone is live and capturing audio');
+            } else {
+                console.warn('⚠️ Microphone track not in live state:', audioTrack.readyState);
+            }
+        } else {
+            console.error('❌ No audio track found in local stream');
         }
         
         // Start audio visualization
@@ -979,9 +1313,7 @@ class VoiceCall {
                     'Authorization': `Bearer ${this.token}`
                 },
                 body: JSON.stringify({
-                    message_text: message,
-                    language: this.elements.messageLanguage?.value || 'en',
-                    auto_translate: this.elements.autoTranslate?.checked || false
+                    message_text: message
                 })
             });
             
@@ -1504,54 +1836,6 @@ class VoiceCall {
      */
     isActive() {
         return this.callState === 'active' || this.callState === 'connecting' || this.callState === 'ringing';
-    }
-
-    /**
-     * Toggle real-time translation
-     */
-    toggleTranslation(enabled) {
-        this.translationEnabled = enabled;
-        
-        if (this.elements.translationSettings) {
-            this.elements.translationSettings.style.display = enabled ? 'block' : 'none';
-        }
-        
-        if (enabled) {
-            this.startVoiceTranslation();
-        } else {
-            this.stopVoiceTranslation();
-        }
-        
-        // Notify other participant about translation state
-        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(JSON.stringify({
-                type: 'translation_state',
-                enabled: enabled,
-                myLanguage: this.elements.myLanguage?.value || 'en',
-                translateTo: this.elements.translateTo?.value || 'en'
-            }));
-        }
-    }
-
-    /**
-     * Update translation settings
-     */
-    updateTranslationSettings() {
-        if (!this.translationEnabled) return;
-        
-        const myLang = this.elements.myLanguage?.value || 'en';
-        const targetLang = this.elements.translateTo?.value || 'en';
-        
-        console.log(`🌐 Translation: ${myLang} → ${targetLang}`);
-        
-        // Notify other participant about language changes
-        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(JSON.stringify({
-                type: 'translation_settings',
-                myLanguage: myLang,
-                translateTo: targetLang
-            }));
-        }
     }
 
     /**
