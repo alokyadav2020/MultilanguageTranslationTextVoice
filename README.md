@@ -1,13 +1,17 @@
-# Translation Production App API
+# 🌍 Real-Time Voice Translation with SeamlessM4T
 
-FastAPI backend providing user registration, login (JWT), and basic user endpoints using SQLite.
+## ✨ Overview
 
-## Features
-- User registration (email, password, optional full name)
-- Secure password hashing (bcrypt via passlib)
-- JWT authentication (access token)
-- Login endpoint (OAuth2 password flow compatible)
-- Current user endpoint `/users/me`
+This project implements real-time voice-to-voice translation using Facebook's SeamlessM4T model for Arabic, English, and French languages during WebRTC voice calls.
+
+### 🎯 Key Features
+- **🗣️ Voice-to-Voice Translation**: Direct speech translation without intermediate text
+- **🌍 3 Languages**: Arabic ↔ English ↔ French
+- **⚡ Real-time Processing**: 2-second audio chunks with minimal latency
+- **📱 WebRTC Integration**: Peer-to-peer voice calls
+- **🎮 GPU Acceleration**: Automatic CUDA detection and optimization
+- **👤 User Management**: JWT authentication and user registration
+- **🔒 Secure**: Password hashing and token-based authentication
 - List users endpoint `/users/`
 - CORS enabled
 - SQLite database (`app.db`)

@@ -17,6 +17,7 @@ from .core.group_migration import run_group_migration
 from .core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from .models.user import User
 from .api import auth, users, chat_ws, translation, voice_chat, voice_call, groups, group_ws
+from .api import enhanced_voice_call  # Import enhanced voice call API
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ app.include_router(chat_ws.router)
 app.include_router(translation.router)
 app.include_router(voice_chat.router)
 app.include_router(voice_call.router)
+app.include_router(enhanced_voice_call.router)  # Enhanced voice call with SeamlessM4T
 app.include_router(groups.router)
 app.include_router(group_ws.router)
 
@@ -377,6 +379,50 @@ async def voice_call_page(
         }
     )
     
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@app.get("/enhanced-voice-call", response_class=HTMLResponse)
+async def enhanced_voice_call_page(
+    request: Request, 
+    call_id: str = None,
+    incoming: bool = False,
+    participant: str = None,
+    language: str = "en",
+    user: User | None = Depends(get_current_ui_user)
+):
+    """Enhanced voice call window with real-time translation"""
+    if not user:
+        return RedirectResponse("/login", 302)
+    
+    # Get token for WebSocket authentication
+    token = request.session.get("token")
+    if not token:
+        return RedirectResponse("/login", 302)
+    
+    # Validate language
+    supported_languages = ["ar", "en", "fr"]
+    if language not in supported_languages:
+        language = "en"
+    
+    response = templates.TemplateResponse(
+        "enhanced_voice_call.html",
+        {
+            "request": request,
+            "user": user,
+            "title": f"Enhanced Voice Call - {participant or 'Unknown'}",
+            "call_id": call_id,
+            "incoming": incoming,
+            "participant": participant,
+            "language": language,
+            "token": token,
+            "supported_languages": supported_languages
+        }
+    )
+    
     # Prevent caching for security
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -585,4 +631,11 @@ if __name__ == "__main__":
     # Always run HTTP for ngrok (simpler)
     # print("🚀 Starting HTTP server for ngrok tunneling...")
     # print("📡 Use ngrok to create HTTPS tunnel")
+    # uvicorn.run(
+    #     "main:app",
+    #     host="0.0.0.0",
+    #     port=443,  # Standard HTTPS port; use 8443 if 443 is blocked
+    #     ssl_keyfile="key.pem",
+    #     ssl_certfile="cert.pem"
+    # )
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

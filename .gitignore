@@ -1,9 +1,9 @@
-bev_env
+
 .env
 src.egg-info
 src\__pycache__
-
-
+seamless_communication
+./seamless_communication
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

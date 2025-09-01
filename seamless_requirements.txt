@@ -1,0 +1,30 @@
+# Enhanced Voice Translation Requirements
+# For SeamlessM4T real-time voice-to-voice translation
+
+# Core SeamlessM4T package
+seamless_communication
+
+# PyTorch (required for SeamlessM4T)
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Audio processing libraries
+librosa>=0.9.0
+soundfile>=0.12.0
+
+# Additional dependencies for better performance
+accelerate>=0.20.0
+transformers>=4.30.0
+sentencepiece>=0.1.99
+
+# Optional: for CUDA support (if using GPU)
+# torch>=2.0.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+# torchaudio>=2.0.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+
+# Installation instructions:
+# 1. Basic installation: pip install -r seamless_requirements.txt
+# 2. GPU support: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+# 3. Then: pip install seamless_communication
+
+# Note: SeamlessM4T models are large (~2-4GB). First run will download models.
+# Ensure you have sufficient disk space and internet connectivity.
