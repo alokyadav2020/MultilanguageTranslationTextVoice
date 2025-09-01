@@ -8,7 +8,7 @@ seamless_communication
 __pycache__/
 *.py[cod]
 *$py.class
-
+static/voice_messages/*
 # C extensions
 *.so
 /voice_messages

@@ -1,0 +1,4 @@
+Requirement already satisfied: soundfile in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (0.13.1)
+Requirement already satisfied: cffi>=1.0 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from soundfile) (1.17.1)
+Requirement already satisfied: numpy in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from soundfile) (1.26.4)
+Requirement already satisfied: pycparser in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from cffi>=1.0->soundfile) (2.21)

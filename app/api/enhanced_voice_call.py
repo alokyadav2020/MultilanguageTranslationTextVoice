@@ -1,4 +1,4 @@
-# Enhanced Voice Call API with SeamlessM4T Real-time Translation
+# Enhanced Voice Call API with Whisper Real-time Translation
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -13,7 +13,7 @@ from ..api.deps import get_current_user
 from ..models.user import User
 from ..models.voice_call import VoiceCall, CallStatus, CallType
 from ..services.voice_call_manager import voice_call_manager
-from ..services.seamless_translation_service import seamless_translation_service
+from ..services.whisper_translation_service import whisper_translation_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/voice-call", tags=["voice-calls"])
@@ -78,7 +78,7 @@ async def initiate_call(
             "callee_id": target_user_id,
             "status": "initiated",
             "translation_enabled": True,
-            "supported_languages": seamless_translation_service.get_supported_languages()
+            "supported_languages": whisper_translation_service.whisper_languages
         }
         
     except Exception as e:
@@ -182,10 +182,10 @@ async def voice_call_websocket(
             return
         
         # Validate supported language
-        if language not in seamless_translation_service.supported_languages:
+        if language not in whisper_translation_service.whisper_languages:
             await websocket.send_text(json.dumps({
                 "type": "error", 
-                "message": f"Language '{language}' not supported. Supported: {list(seamless_translation_service.supported_languages.keys())}"
+                "message": f"Language '{language}' not supported. Supported: {list(whisper_translation_service.whisper_languages.keys())}"
             }))
             await websocket.close()
             return
@@ -206,8 +206,8 @@ async def voice_call_websocket(
             "call_id": call_id,
             "user_id": user.id,
             "language": language,
-            "translation_available": seamless_translation_service.is_available(),
-            "supported_languages": seamless_translation_service.get_supported_languages()
+            "translation_available": whisper_translation_service.is_available,
+            "supported_languages": whisper_translation_service.whisper_languages
         }))
         
         # Handle messages
@@ -306,7 +306,7 @@ async def get_call_status(
             "ended_at": voice_call.ended_at.isoformat() if voice_call.ended_at else None,
             "active_participants": call_session.get_participant_count() if call_session else 0,
             "translation_enabled": True,
-            "supported_languages": seamless_translation_service.get_supported_languages()
+            "supported_languages": whisper_translation_service.whisper_languages
         }
         
     except Exception as e:
@@ -315,15 +315,15 @@ async def get_call_status(
 
 @router.get("/translation/test")
 async def test_translation_service():
-    """Test SeamlessM4T translation service"""
+    """Test Whisper translation service"""
     try:
-        stats = seamless_translation_service.get_translation_stats()
+        status = whisper_translation_service.get_service_status()
         
         return {
-            "service_available": seamless_translation_service.is_available(),
-            "supported_languages": seamless_translation_service.get_supported_languages(),
-            "stats": stats,
-            "test_message": "SeamlessM4T real-time voice translation ready!" if seamless_translation_service.is_available() else "SeamlessM4T not available - please install seamless_communication"
+            "service_available": whisper_translation_service.is_available,
+            "supported_languages": whisper_translation_service.whisper_languages,
+            "status": status,
+            "test_message": "Whisper real-time voice translation ready!" if whisper_translation_service.is_available else "Whisper not available - please run install_whisper_service.py"
         }
         
     except Exception as e:
@@ -340,11 +340,11 @@ async def get_call_stats(current_user: User = Depends(get_current_user)):
     """Get voice call system statistics"""
     try:
         manager_stats = voice_call_manager.get_stats()
-        translation_stats = seamless_translation_service.get_translation_stats()
+        translation_status = whisper_translation_service.get_service_status()
         
         return {
             "call_manager": manager_stats,
-            "translation_service": translation_stats,
+            "translation_service": translation_status,
             "user_active_call": voice_call_manager.get_user_call(current_user.id)
         }
         

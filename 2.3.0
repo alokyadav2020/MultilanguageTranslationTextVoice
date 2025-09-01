@@ -1,0 +1,8 @@
+Requirement already satisfied: gtts in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (2.5.4)
+Requirement already satisfied: requests<3,>=2.27 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from gtts) (2.32.4)
+Requirement already satisfied: click<8.2,>=7.1 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from gtts) (8.1.8)
+Requirement already satisfied: colorama in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from click<8.2,>=7.1->gtts) (0.4.6)
+Requirement already satisfied: charset_normalizer<4,>=2 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from requests<3,>=2.27->gtts) (3.4.3)
+Requirement already satisfied: idna<4,>=2.5 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from requests<3,>=2.27->gtts) (2.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from requests<3,>=2.27->gtts) (2.5.0)
+Requirement already satisfied: certifi>=2017.4.17 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from requests<3,>=2.27->gtts) (2025.8.3)

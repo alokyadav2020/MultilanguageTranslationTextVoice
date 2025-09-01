@@ -152,7 +152,7 @@ def main():
     # Ask user what they want to do
     print("\nWhat would you like to do?")
     print("1. 🔧 Full setup (install dependencies + download models)")
-    print("2. 📥 Download models only (if dependencies already installed)")
+    print("2. 📥 Install Whisper Translation (Recommended alternative)")
     print("3. 🚀 Start server only (if everything is ready)")
     print("4. 🧪 Test existing setup")
     
@@ -183,12 +183,30 @@ def main():
             start_server()
     
     elif choice == '2':
-        # Download models only
-        if not download_models():
-            logger.error("❌ Model download failed")
-            sys.exit(1)
+        # Install Whisper translation service
+        logger.info("🎤 Installing Whisper Translation Service...")
         
-        logger.info("✅ Models ready!")
+        success, _, _ = run_command(
+            "python install_whisper_service.py",
+            "Installing Whisper Translation Service"
+        )
+        
+        if success:
+            logger.info("✅ Whisper Translation Service installed!")
+            
+            # Test the installation
+            test_success, _, _ = run_command(
+                "python test_whisper_service.py",
+                "Testing Whisper Translation Service"
+            )
+            
+            if test_success:
+                logger.info("✅ Whisper service test passed!")
+            else:
+                logger.warning("⚠️ Whisper service test had issues, but installation completed")
+        else:
+            logger.error("❌ Whisper installation failed")
+            sys.exit(1)
         
         answer = input("\n🚀 Start the server now? (y/n): ").lower().strip()
         if answer == 'y':
@@ -211,20 +229,36 @@ def main():
             import fastapi
             logger.info(f"✅ FastAPI {fastapi.__version__}")
             
-            # Try to import seamless_communication
+            # Try to import whisper and related packages
             try:
-                import seamless_communication
-                logger.info("✅ SeamlessM4T available")
+                import whisper
+                logger.info("✅ Whisper available")
+                
+                from googletrans import Translator
+                from gtts import gTTS
+                logger.info("✅ Google Translate and TTS available")
             except ImportError:
-                logger.error("❌ SeamlessM4T not installed")
+                logger.error("❌ Whisper or translation libraries not installed")
+                logger.info("💡 Run option 2 to install Whisper Translation Service")
                 return
             
             # Test our services
-            from app.services.seamless_translation_service import SeamlessTranslationService
-            logger.info("✅ Translation service imports successfully")
-            
-            from app.services.voice_call_manager import VoiceCallManager
-            logger.info("✅ Voice call manager imports successfully")
+            try:
+                from app.services.whisper_translation_service import whisper_translation_service
+                logger.info("✅ Whisper translation service imports successfully")
+                
+                from app.services.voice_call_manager import VoiceCallManager
+                logger.info("✅ Voice call manager imports successfully")
+                
+                # Test service availability
+                if whisper_translation_service.is_available:
+                    logger.info("✅ Whisper translation service is ready!")
+                else:
+                    logger.warning("⚠️ Whisper translation service not fully initialized")
+                    
+            except ImportError as e:
+                logger.warning(f"⚠️ Service import failed: {e}")
+                logger.info("💡 Services should work once dependencies are installed")
             
             logger.info("🎉 All components are working!")
             

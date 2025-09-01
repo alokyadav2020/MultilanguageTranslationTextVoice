@@ -4,7 +4,7 @@ import uuid
 import time
 from typing import Dict, Optional
 from fastapi import WebSocket
-from ..services.seamless_translation_service import seamless_translation_service
+from ..services.whisper_translation_service import whisper_translation_service
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class VoiceCallManager:
             del self.user_calls[user_id]
             
         # Clean up translation buffers
-        seamless_translation_service.cleanup_call_buffers(call_id)
+        whisper_translation_service.cleanup_call_buffers(call_id)
         
         # Notify other participants
         await self._broadcast_participant_left(call_id, user_id)
@@ -202,7 +202,7 @@ class VoiceCallManager:
                 
             try:
                 # Process voice translation
-                result = await seamless_translation_service.process_voice_chunk_realtime(
+                result = await whisper_translation_service.process_voice_chunk_realtime(
                     call_id=call_id,
                     user_id=user_id,
                     audio_data=audio_data,
@@ -344,8 +344,8 @@ class VoiceCallManager:
         return {
             "active_calls": len(self.active_calls),
             "total_participants": total_participants,
-            "translation_service_available": seamless_translation_service.is_available(),
-            "supported_languages": seamless_translation_service.get_supported_languages()
+            "translation_service_available": whisper_translation_service.is_available,
+            "supported_languages": whisper_translation_service.whisper_languages
         }
 
 # Global call manager instance

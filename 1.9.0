@@ -1,0 +1,2 @@
+Requirement already satisfied: scipy in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (1.15.3)
+Requirement already satisfied: numpy<2.5,>=1.23.5 in d:\client_pro\fiverr\sachin mon\translation_production_app\multilanguagetranslationtextvoice\env\lib\site-packages (from scipy) (1.26.4)
