@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Depends, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.templating import Jinja2Templates
@@ -9,6 +9,10 @@ import logging
 import os
 import uuid
 import json
+import csv
+import io
+import re
+from datetime import datetime
 from pathlib import Path
 from .core.config import get_settings
 from .core.database import engine, Base, get_db
@@ -66,6 +70,154 @@ async def secure_context_middleware(request: Request, call_next):
         response.headers["X-HTTPS-Upgrade"] = f"https://{request.url.hostname}:{request.url.port or 443}{request.url.path}"
     
     return response
+
+# ===================================
+# CHAT HISTORY DOWNLOAD ENDPOINT (Before router includes)
+# ===================================
+
+@app.get("/api/chat/download-history/{other_user_id:int}")
+async def download_chat_history_csv(
+    other_user_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Download chat history as CSV file
+    Available at: GET /api/chat/download-history/{other_user_id}
+    """
+    try:
+        # Get current user from session token
+        current_user = get_current_ui_user(request, db)
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        # Validate other user exists
+        from .models.user import User
+        other_user = db.query(User).filter(User.id == other_user_id).first()
+        if not other_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get chat history
+        from .models.chatroom import Chatroom
+        from .models.message import Message
+        
+        # Find chatroom between the two users
+        direct_key = f"direct:{min(current_user.id, other_user_id)}:{max(current_user.id, other_user_id)}"
+        chatroom = (
+            db.query(Chatroom)
+            .filter(Chatroom.chatroom_name == direct_key, Chatroom.is_group_chat.is_(False))
+            .first()
+        )
+        
+        if not chatroom:
+            # No chat history exists, return empty CSV
+            messages = []
+        else:
+            # Get all messages from the chatroom
+            messages = (
+                db.query(Message)
+                .filter(Message.chatroom_id == chatroom.id)
+                .order_by(Message.timestamp.asc())
+                .all()
+            )
+        
+        # Create CSV content
+        output = io.StringIO()
+        writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+        
+        # Write CSV headers
+        writer.writerow([
+            'Timestamp',
+            'Sender',
+            'Message Type',
+            'Original Text',
+            'Original Language',
+            'Translations',
+            'Audio Duration (seconds)',
+            'Message ID'
+        ])
+        
+        # Write message data
+        for message in messages:
+            # Get sender name
+            sender_name = message.sender.full_name or message.sender.email
+            
+            # Format timestamp
+            timestamp_str = message.timestamp.strftime('%Y-%m-%d %H:%M:%S') if message.timestamp else ''
+            
+            # Format translations
+            translations_str = ''
+            if message.translations_cache:
+                translations_list = []
+                for lang, text in message.translations_cache.items():
+                    translations_list.append(f"{lang}: {text}")
+                translations_str = ' | '.join(translations_list)
+            
+            # Audio duration
+            audio_duration = message.audio_duration if message.audio_duration else ''
+            
+            writer.writerow([
+                timestamp_str,
+                sender_name,
+                message.message_type.value if message.message_type else 'text',
+                message.original_text,
+                message.original_language,
+                translations_str,
+                audio_duration,
+                message.id
+            ])
+        
+        # Prepare file content
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Generate filename
+        other_user_name = (other_user.full_name or other_user.email).replace(' ', '_')
+        # Remove special characters for filename safety
+        other_user_name = re.sub(r'[<>:"/\\|?*]', '', other_user_name)
+        
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        filename = f"chat_history_{other_user_name}_{current_date}.csv"
+        
+        # Return CSV file as response
+        return StreamingResponse(
+            io.BytesIO(csv_content.encode('utf-8')),
+            media_type='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Content-Type': 'text/csv; charset=utf-8'
+            }
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Chat history download error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate chat history file")
+
+
+@app.get("/api/chat/test-download")
+async def test_download_endpoint():
+    """Test endpoint to verify route registration"""
+    return {"message": "Download endpoint is working", "status": "ok"}
+
+
+@app.get("/api/test-translation")
+async def test_translation_endpoint():
+    """Test endpoint to verify translation service is working"""
+    try:
+        from .services.translation import translation_service
+        result = await translation_service.translate_text_async("Hello", "en", "fr")
+        return {
+            "status": "ok", 
+            "test_translation": result,
+            "message": "Translation service is working",
+            "supported_languages": list(translation_service.supported_languages)
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e), "message": "Translation service failed"}
+
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -486,6 +638,26 @@ async def upload_voice_message(
                 db=db
             )
             
+            # Validate result data and provide defaults for None values
+            transcribed_text = result.get("transcribed_text") or "[Voice message - transcription unavailable]"
+            translations = result.get("translations") or {}
+            audio_urls = result.get("audio_urls") or {}
+            duration = result.get("duration") or 0
+            message = result.get("message")
+            
+            # Ensure message object exists
+            if not message:
+                logger.error("Voice service did not return a message object")
+                return {
+                    "success": False,
+                    "message_id": 0,
+                    "transcribed_text": "[Voice message - processing failed]",
+                    "translations": {},
+                    "audio_urls": {},
+                    "audio_duration": 0,
+                    "error": "Failed to create message record"
+                }
+            
             # Broadcast message via WebSocket
             from .core.chat_manager import chat_manager
             message_data = {
@@ -495,12 +667,12 @@ async def upload_voice_message(
                     "id": current_user.id,
                     "name": current_user.full_name or current_user.email
                 },
-                "original_text": result["transcribed_text"],
+                "original_text": transcribed_text,
                 "original_language": language,
-                "translations_cache": result["translations"],
-                "audio_urls": result["audio_urls"],
-                "audio_duration": result["duration"],
-                "timestamp": result["message"].timestamp.isoformat()
+                "translations_cache": translations,
+                "audio_urls": audio_urls,
+                "audio_duration": duration,
+                "timestamp": message.timestamp.isoformat() if hasattr(message, 'timestamp') else ""
             }
             
             # Send to both sender and recipient
@@ -509,11 +681,11 @@ async def upload_voice_message(
             
             return {
                 "success": True,
-                "message_id": result["message"].id,
-                "transcribed_text": result["transcribed_text"],
-                "translations": result["translations"],
-                "audio_urls": result["audio_urls"],
-                "audio_duration": result["duration"]
+                "message_id": message.id,
+                "transcribed_text": transcribed_text,
+                "translations": translations,
+                "audio_urls": audio_urls,
+                "audio_duration": duration
             }
             
         finally:
@@ -526,9 +698,10 @@ async def upload_voice_message(
         return {
             "success": False,
             "message_id": 0,
-            "transcribed_text": "",
+            "transcribed_text": "[Voice message - upload failed]",
             "translations": {},
             "audio_urls": {},
+            "audio_duration": 0,
             "error": str(e)
         }
 
@@ -619,23 +792,48 @@ async def test_voice_endpoint():
         }
 
 
-
-
 # if __name__ == "__main__":
 #     import uvicorn
 #     uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
 if __name__ == "__main__":
+    # import uvicorn
+    # import os
+    
+    # # Always run HTTP for ngrok (simpler)
+    # # print("🚀 Starting HTTP server for ngrok tunneling...")
+    # # print("📡 Use ngrok to create HTTPS tunnel")
+    # # uvicorn.run(
+    # #     "main:app",
+    # #     host="0.0.0.0",
+    # #     port=443,  # Standard HTTPS port; use 8443 if 443 is blocked
+    # #     ssl_keyfile="key.pem",
+    # #     ssl_certfile="cert.pem"
+    # # )
+    # uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
     import uvicorn
     import os
+    from pathlib import Path
     
-    # Always run HTTP for ngrok (simpler)
-    # print("🚀 Starting HTTP server for ngrok tunneling...")
-    # print("📡 Use ngrok to create HTTPS tunnel")
-    # uvicorn.run(
-    #     "main:app",
-    #     host="0.0.0.0",
-    #     port=443,  # Standard HTTPS port; use 8443 if 443 is blocked
-    #     ssl_keyfile="key.pem",
-    #     ssl_certfile="cert.pem"
-    # )
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Check if SSL certificates exist
+    cert_path = Path("cert.pem")
+    key_path = Path("key.pem")
+    
+    if cert_path.exists() and key_path.exists():
+        print("🔐 Starting HTTPS server...")
+        print(f"🌐 Access at: https://localhost:8443")
+        print(f"🔗 Or via IP: https://YOUR_JETSON_IP:8443")
+        
+        uvicorn.run(
+            "app.main:app",
+            host="0.0.0.0",
+            port=8443,  # Use 8443 for HTTPS
+            ssl_keyfile="key.pem",
+            ssl_certfile="cert.pem",
+            reload=True
+        )
+    else:
+        print("⚠️ SSL certificates not found. Running HTTP server...")
+        print("🔧 Generate certificates with: python generate_ssl.py")
+        print(f"🌐 Access at: http://localhost:8000")
+        
+        uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

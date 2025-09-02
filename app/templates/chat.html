@@ -249,6 +249,11 @@
             <option value="ar" {{ 'selected' if current_user.preferred_language == 'ar' else '' }}>العربية</option>
           </select>
           
+          <!-- Chat History Download Button -->
+          <button id="download-chat-btn" class="btn btn-sm btn-outline-success" title="Download Chat History as CSV">
+            <i class="fas fa-download"></i> CSV
+          </button>
+          
           <!-- Voice Call Controls -->
           <div class="call-controls">
             <button id="voice-call-btn" class="btn call-button" title="Start Voice Call">
@@ -556,17 +561,28 @@
   }
 
   function getDisplayText(originalText, originalLang, translationsCache) {
+    // Debug logging
+    console.log('getDisplayText called:', {
+      originalText: originalText,
+      originalLang: originalLang,
+      userLanguage: userLanguage,
+      translationsCache: translationsCache
+    });
+    
     // If user's language matches original language, return original
     if (userLanguage === originalLang) {
+      console.log('Language matches original, returning original text');
       return { text: originalText, isTranslated: false };
     }
     
     // If translation exists, return it
     if (translationsCache && translationsCache[userLanguage]) {
+      console.log('Translation found for', userLanguage, ':', translationsCache[userLanguage]);
       return { text: translationsCache[userLanguage], isTranslated: true };
     }
     
     // Return original as fallback
+    console.log('No translation found, returning original text');
     return { text: originalText, isTranslated: false };
   }
 
@@ -598,6 +614,15 @@
     // Get appropriate text to display
     const displayData = getDisplayText(originalText, originalLang, translationsCache);
     const displayText = displayData.text;
+    
+    // Debug message display
+    console.log('Displaying message:', {
+      sender: senderEmail,
+      originalText: originalText,
+      displayText: displayText,
+      isTranslated: displayData.isTranslated,
+      currentUserLanguage: userLanguage
+    });
     
     // Create message content with timestamp
     let messageContent = '<div><strong class="me-1">'+label+':</strong>'+displayText;
@@ -1616,6 +1641,93 @@
   
   // Run the check
   checkVoiceRecordingSupport();
+
+  // Add download chat history functionality
+  function downloadChatHistory() {
+    const downloadBtn = document.getElementById('download-chat-btn');
+    const originalText = downloadBtn.innerHTML;
+    
+    // Show loading state
+    downloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Downloading...';
+    downloadBtn.disabled = true;
+    
+    // Download the CSV file
+    fetch(`/api/chat/download-history/${otherUserId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      return response.blob();
+    })
+    .then(blob => {
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Generate filename with timestamp
+      const now = new Date();
+      const timestamp = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const otherUserName = '{{ remote_user.full_name or remote_user.email }}'.replace(/[<>"]/g, '');
+      a.download = `chat_history_${otherUserName}_${timestamp}.csv`;
+      
+      // Trigger download
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      // Show success message
+      showTemporaryMessage('Chat history downloaded successfully!', 'success');
+    })
+    .catch(error => {
+      console.error('Download error:', error);
+      showTemporaryMessage('Failed to download chat history. Please try again.', 'error');
+    })
+    .finally(() => {
+      // Restore button state
+      downloadBtn.innerHTML = originalText;
+      downloadBtn.disabled = false;
+    });
+  }
+  
+  function showTemporaryMessage(message, type = 'info') {
+    // Create temporary message element
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `alert alert-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'info'} alert-dismissible`;
+    messageDiv.style.position = 'fixed';
+    messageDiv.style.top = '20px';
+    messageDiv.style.right = '20px';
+    messageDiv.style.zIndex = '9999';
+    messageDiv.style.minWidth = '300px';
+    messageDiv.innerHTML = `
+      <i class="fas fa-${type === 'error' ? 'exclamation-triangle' : type === 'success' ? 'check-circle' : 'info-circle'}"></i>
+      ${message}
+      <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    
+    document.body.appendChild(messageDiv);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      if (messageDiv.parentElement) {
+        messageDiv.remove();
+      }
+    }, 5000);
+  }
+  
+  // Add event listener for download button
+  document.addEventListener('DOMContentLoaded', function() {
+    const downloadBtn = document.getElementById('download-chat-btn');
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', downloadChatHistory);
+    }
+  });
 
 })();
 </script>
