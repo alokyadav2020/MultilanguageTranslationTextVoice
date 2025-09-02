@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 import logging
 import os
 import uuid
-import json
 import csv
 import io
 import re
@@ -658,26 +657,37 @@ async def upload_voice_message(
                     "error": "Failed to create message record"
                 }
             
-            # Broadcast message via WebSocket
+            # Broadcast message via WebSocket to the direct chat room
             from .core.chat_manager import chat_manager
-            message_data = {
-                "type": "message",
-                "message_type": "voice",
-                "sender": {
-                    "id": current_user.id,
-                    "name": current_user.full_name or current_user.email
-                },
-                "original_text": transcribed_text,
-                "original_language": language,
-                "translations_cache": translations,
-                "audio_urls": audio_urls,
-                "audio_duration": duration,
-                "timestamp": message.timestamp.isoformat() if hasattr(message, 'timestamp') else ""
-            }
+            from .models.chatroom import Chatroom
             
-            # Send to both sender and recipient
-            await chat_manager.send_personal_message(json.dumps(message_data), current_user.id)
-            await chat_manager.send_personal_message(json.dumps(message_data), recipient_id)
+            # Find the direct chat room between sender and recipient
+            direct_key = f"direct:{min(current_user.id, recipient_id)}:{max(current_user.id, recipient_id)}"
+            direct_room = db.query(Chatroom).filter(
+                Chatroom.chatroom_name == direct_key, 
+                Chatroom.is_group_chat.is_(False)
+            ).first()
+            
+            if direct_room:
+                message_data = {
+                    "type": "message",
+                    "message_type": "voice",
+                    "sender": {
+                        "id": current_user.id,
+                        "name": current_user.full_name or current_user.email
+                    },
+                    "original_text": transcribed_text,
+                    "original_language": language,
+                    "translations_cache": translations,
+                    "audio_urls": audio_urls,
+                    "audio_duration": duration,
+                    "timestamp": message.timestamp.isoformat() if hasattr(message, 'timestamp') else ""
+                }
+                
+                # Broadcast to the direct chat room
+                await chat_manager.broadcast(direct_room.id, message_data)
+            else:
+                logger.warning(f"No direct chat room found between users {current_user.id} and {recipient_id}")
             
             return {
                 "success": True,
@@ -811,29 +821,36 @@ if __name__ == "__main__":
     # # )
     # uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
     import uvicorn
+    import ssl
     import os
     from pathlib import Path
     
-    # Check if SSL certificates exist
-    cert_path = Path("cert.pem")
-    key_path = Path("key.pem")
+    # SSL configuration
+    ssl_cert_path = Path("cert.pem")
+    ssl_key_path = Path("key.pem")
     
-    if cert_path.exists() and key_path.exists():
-        print("🔐 Starting HTTPS server...")
-        print(f"🌐 Access at: https://localhost:8443")
-        print(f"🔗 Or via IP: https://YOUR_JETSON_IP:8443")
-        
+    # Check if SSL certificates exist
+    if ssl_cert_path.exists() and ssl_key_path.exists():
+        print("🔒 Starting server with HTTPS...")
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",
-            port=8443,  # Use 8443 for HTTPS
+            port=8000,
+            reload=True,
             ssl_keyfile="key.pem",
             ssl_certfile="cert.pem",
-            reload=True
+            ssl_version=ssl.PROTOCOL_TLS,
+            ssl_cert_reqs=ssl.CERT_NONE,
+            ssl_check_hostname=False,
+            ssl_ciphers="ALL"
         )
     else:
-        print("⚠️ SSL certificates not found. Running HTTP server...")
-        print("🔧 Generate certificates with: python generate_ssl.py")
-        print(f"🌐 Access at: http://localhost:8000")
-        
-        uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+        print("⚠️  SSL certificates not found. Starting with HTTP (voice features will be limited)...")
+        print("📝 To enable voice features, generate SSL certificates:")
+        print("   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes")
+        uvicorn.run(
+            "app.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True
+        )

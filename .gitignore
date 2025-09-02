@@ -1,6 +1,8 @@
 cert.pem
 key.pem
 .env
+app/static/uploads/voice/*
+app/static/uploads/*
 src.egg-info
 src\__pycache__
 seamless_communication
