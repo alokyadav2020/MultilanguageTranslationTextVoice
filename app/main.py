@@ -21,6 +21,7 @@ from .core.security import verify_password, get_password_hash, create_access_tok
 from .models.user import User
 from .api import auth, users, chat_ws, translation, voice_chat, voice_call, groups, group_ws
 from .api import enhanced_voice_call  # Import enhanced voice call API
+from .api import chat_summary  # Import chat summary API
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -227,6 +228,7 @@ app.include_router(voice_call.router)
 app.include_router(enhanced_voice_call.router)  # Enhanced voice call with SeamlessM4T
 app.include_router(groups.router)
 app.include_router(group_ws.router)
+app.include_router(chat_summary.router)  # Chat summary with AI
 
 
 @app.on_event("startup")

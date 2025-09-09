@@ -1,0 +1,45 @@
+# Chat Summary Feature Dependencies (Transformers-based)
+# Add these to your main requirements.txt or install separately
+
+# Core AI/ML Dependencies
+transformers>=4.30.0             # HuggingFace transformers for AI models
+torch>=2.0.0                     # PyTorch for model operations
+accelerate>=0.20.0               # Model acceleration utilities
+sentencepiece>=0.1.99            # Tokenization support
+protobuf>=3.20.0                 # Protocol buffers for model serialization
+
+# HTTP and Async Dependencies  
+httpx>=0.24.0                    # Async HTTP client
+aiofiles>=23.1.0                 # Async file operations
+asyncio                          # Async programming support
+
+# Utility Dependencies
+tqdm>=4.65.0                     # Progress bars for downloads
+requests>=2.31.0                 # HTTP requests for model download
+
+# GPU Support (NVIDIA CUDA)
+# Uncomment these if you have NVIDIA GPU and want CUDA acceleration
+# torch-cuda>=2.0.0              # CUDA-enabled PyTorch
+# bitsandbytes>=0.41.0           # Quantization utilities with CUDA
+
+# GPU Support (AMD ROCm) 
+# Uncomment these if you have AMD GPU and want ROCm acceleration
+# torch-rocm>=2.0.0              # ROCm-enabled PyTorch
+
+# Apple Silicon Support (Mac M1/M2)
+# Automatic with torch>=2.0.0 on macOS with Apple Silicon
+
+# Development and Testing
+pytest>=7.4.0                   # Testing framework
+pytest-asyncio>=0.21.0          # Async testing support
+
+# Installation Notes:
+# For NVIDIA GPUs: pip install torch transformers accelerate
+# For CPU only: pip install torch transformers accelerate
+# For Apple Silicon: pip install torch transformers accelerate (Metal support included)
+
+# Model Information:
+# - Uses facebook/bart-large-cnn for summarization (~1.6GB)
+# - No large model downloads required like Llama
+# - Works efficiently on CPU and GPU
+# - Supports multiple languages through translation

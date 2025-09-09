@@ -1,0 +1,450 @@
+/* Chat Summary Styles */
+
+/* Summary Buttons */
+.summary-buttons, .group-summary-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.summary-buttons .btn, .group-summary-buttons .btn {
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.summary-buttons .btn:hover, .group-summary-buttons .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.summary-buttons .btn i, .group-summary-buttons .btn i {
+    margin-right: 4px;
+}
+
+/* Summary Modal */
+#summaryModal .modal-dialog {
+    max-width: 1200px;
+}
+
+#summaryModal .modal-content {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+#summaryModal .modal-header {
+    border-radius: 12px 12px 0 0;
+    border-bottom: none;
+    padding: 20px 24px;
+}
+
+#summaryModal .modal-body {
+    padding: 24px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+#summaryModal .modal-footer {
+    border-top: 1px solid #e9ecef;
+    padding: 16px 24px;
+    border-radius: 0 0 12px 12px;
+}
+
+/* Loading State */
+#summaryLoading {
+    padding: 60px 20px;
+}
+
+#summaryLoading .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    border-width: 0.3em;
+}
+
+#summaryLoading h5 {
+    margin-top: 20px;
+    font-weight: 600;
+}
+
+#summaryLoading .progress {
+    width: 200px;
+    margin: 20px auto 0;
+    height: 6px;
+    border-radius: 3px;
+    background-color: #e9ecef;
+}
+
+#summaryLoading .progress-bar {
+    border-radius: 3px;
+}
+
+/* Summary Content */
+.summary-text-container {
+    margin-bottom: 20px;
+}
+
+.summary-text {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    padding: 24px;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #495057;
+}
+
+.summary-text h3, .summary-text h4, .summary-text h5 {
+    margin-top: 24px;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.summary-text h3 {
+    color: #0d6efd;
+    font-size: 1.25rem;
+}
+
+.summary-text h4 {
+    color: #212529;
+    font-size: 1.1rem;
+}
+
+.summary-text h5 {
+    color: #0d6efd;
+    font-size: 1rem;
+}
+
+.summary-text ul {
+    margin: 12px 0;
+    padding-left: 0;
+}
+
+.summary-text li {
+    margin: 8px 0;
+    padding: 8px 0;
+    border-bottom: 1px solid #e9ecef;
+    list-style: none;
+    position: relative;
+    padding-left: 20px;
+}
+
+.summary-text li:before {
+    content: "▸";
+    color: #0d6efd;
+    font-weight: bold;
+    position: absolute;
+    left: 0;
+}
+
+.summary-text li:last-child {
+    border-bottom: none;
+}
+
+.summary-text strong {
+    color: #212529;
+    font-weight: 600;
+}
+
+.summary-text em {
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Statistics Panel */
+.summary-stats-container {
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.summary-stats-container h6 {
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #198754;
+}
+
+.stats-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.stat-card {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 16px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: #0d6efd;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.stat-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #212529;
+}
+
+.stat-value.badge {
+    font-size: 0.875rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+}
+
+.stat-card .progress {
+    height: 4px;
+    border-radius: 2px;
+    background-color: #e9ecef;
+    margin: 8px 0 4px 0;
+}
+
+.stat-card .progress-bar {
+    border-radius: 2px;
+}
+
+.stat-card small {
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+/* Error State */
+#summaryError .alert {
+    border: none;
+    border-radius: 12px;
+    padding: 20px;
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
+    border-left: 4px solid #dc3545;
+}
+
+#summaryError .alert i {
+    font-size: 1.2rem;
+    margin-right: 8px;
+}
+
+/* Download Buttons */
+#downloadButtons .btn {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 8px 16px;
+    transition: all 0.2s ease;
+}
+
+#downloadButtons .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+}
+
+#downloadButtons .btn i {
+    margin-right: 6px;
+}
+
+/* Language Selector */
+.summary-language-selector {
+    margin-bottom: 16px;
+}
+
+.summary-language-selector label {
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 8px;
+}
+
+.summary-language-selector select {
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    background-color: white;
+    transition: border-color 0.2s ease;
+}
+
+.summary-language-selector select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    #summaryModal .modal-dialog {
+        margin: 10px;
+        max-width: calc(100% - 20px);
+    }
+    
+    #summaryModal .modal-body {
+        padding: 16px;
+        max-height: 60vh;
+    }
+    
+    .summary-text {
+        padding: 16px;
+        font-size: 0.9rem;
+    }
+    
+    .summary-stats-container {
+        margin-top: 20px;
+        padding: 16px;
+    }
+    
+    .stat-card {
+        padding: 12px;
+    }
+    
+    .summary-buttons .btn span,
+    .group-summary-buttons .btn span {
+        display: none !important;
+    }
+    
+    .summary-buttons .btn,
+    .group-summary-buttons .btn {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .summary-text {
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    
+    .summary-text h3 {
+        font-size: 1.1rem;
+    }
+    
+    .summary-text h4 {
+        font-size: 1rem;
+    }
+    
+    .summary-text h5 {
+        font-size: 0.9rem;
+    }
+    
+    .stat-card {
+        padding: 10px;
+    }
+    
+    .stat-value {
+        font-size: 1rem;
+    }
+}
+
+/* Animation Classes */
+.summary-fade-in {
+    animation: summaryFadeIn 0.3s ease-in-out;
+}
+
+@keyframes summaryFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.summary-slide-up {
+    animation: summarySlideUp 0.4s ease-out;
+}
+
+@keyframes summarySlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Success States */
+.summary-success {
+    border-left: 4px solid #198754;
+    background: linear-gradient(135deg, #d1e7dd 0%, #a3d9a4 100%);
+}
+
+.summary-info {
+    border-left: 4px solid #0dcaf0;
+    background: linear-gradient(135deg, #d1ecf1 0%, #9eeaf9 100%);
+}
+
+/* Button Loading State */
+.btn-loading {
+    position: relative;
+    color: transparent !important;
+}
+
+.btn-loading::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Chat Integration */
+.chat-header .summary-buttons {
+    margin-left: auto;
+}
+
+.message-header .summary-buttons {
+    flex-shrink: 0;
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .summary-text {
+        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .summary-stats-container {
+        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+        border-color: #4a5568;
+    }
+    
+    .stat-card {
+        background: #1a202c;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .stat-label {
+        color: #a0aec0;
+    }
+    
+    .stat-value {
+        color: #e2e8f0;
+    }
+}
