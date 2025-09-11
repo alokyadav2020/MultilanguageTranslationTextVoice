@@ -4,12 +4,12 @@ import uuid
 import tempfile
 import asyncio
 import concurrent.futures
-import threading
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, List, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
-# Voice processing libraries
+# Voice processing libraries (install with: pip install speech-recognition gtts pydub openai-whisper)
 try:
     import speech_recognition as sr
     from gtts import gTTS
@@ -26,37 +26,14 @@ except ImportError as e:
     print(f"WARNING: Voice processing libraries not installed. Error: {e}")
     print("Run: pip install speech-recognition gtts pydub openai-whisper torch numpy")
 
-from ..models.message import Message, MessageType
+from ..models.message import Message, MessageType, ChatroomMember
 from ..models.chatroom import Chatroom
+from ..models.user import User
 from ..models.audio_file import AudioFile
 from ..services.translation import translation_service
 
 class VoiceMessageService:
-    """
-    Singleton Voice Message Service with Whisper Turbo Model
-    Only one instance of this service will be created to prevent multiple Whisper model loading
-    """
-    _instance = None
-    _lock = threading.Lock()
-    _initialized = False
-    
-    def __new__(cls):
-        """Singleton pattern - ensure only one instance exists"""
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    print("🏗️ Creating singleton VoiceMessageService instance")
-                    cls._instance = super(VoiceMessageService, cls).__new__(cls)
-        return cls._instance
-    
     def __init__(self):
-        """Initialize the service only once"""
-        # Prevent re-initialization of singleton
-        if self._initialized:
-            return
-            
-        print(f"🔧 Initializing VoiceMessageService (ID: {id(self)})")
-        
         self.upload_dir = Path("app/static/uploads/voice")
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         
@@ -66,19 +43,23 @@ class VoiceMessageService:
             thread_name_prefix="voice_processing"
         )
         
-        # Initialize Whisper model with TURBO configuration (singleton)
+        # Initialize Whisper model (lazy loading to prevent startup duplicate loading)
         self.whisper_model = None
         self.whisper_device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        if WHISPER_AVAILABLE:
-            try:
-                print("🔄 Loading Whisper TURBO model (singleton)...")
-                # Use 'turbo' model for best performance
-                self.whisper_model = whisper.load_model("turbo", device=self.whisper_device)
-                print(f"✅ Whisper TURBO model loaded successfully on {self.whisper_device} (singleton)")
-            except Exception as e:
-                print(f"❌ Failed to load Whisper model: {e}")
-                self.whisper_model = None
+        # Commenting out immediate loading to prevent duplicate loading with WhisperTranslationService
+        # if WHISPER_AVAILABLE:
+        #     try:
+        #         print("🔄 Loading Whisper model...")
+        #         # Use 'small' model for better accuracy than 'base'
+        #         self.whisper_model = whisper.load_model("small", device=self.whisper_device)
+        #         print(f"✅ Whisper model loaded successfully on {self.whisper_device}")
+        #     except Exception as e:
+        #         print(f"❌ Failed to load Whisper model: {e}")
+        #         self.whisper_model = None
+        
+        # Whisper will be loaded lazily when first needed
+        print("📝 VoiceService initialized with lazy Whisper loading")
         
         # Enhanced audio processing parameters
         self.optimal_sample_rate = 16000
@@ -87,11 +68,7 @@ class VoiceMessageService:
         self.max_audio_duration = 300000  # 5 minutes maximum
         self.target_dbfs = -16  # Target volume level for optimal recognition
         
-        # Mark as initialized
-        self._initialized = True
-        print("✅ VoiceMessageService singleton initialization complete")
-    
-    async def create_voice_message(
+    async def process_voice_message_async(
         self, 
         audio_data: bytes, 
         user_id: int,
@@ -100,7 +77,7 @@ class VoiceMessageService:
         db: Session
     ) -> Dict:
         """
-        Main entry point - Fully asynchronous voice message processing with enhanced accuracy
+        Fully asynchronous voice message processing with enhanced accuracy
         """
         
         if not VOICE_LIBS_AVAILABLE:
@@ -152,9 +129,6 @@ class VoiceMessageService:
                 db=db
             )
             
-            # Get audio duration for response
-            audio_duration = self._get_audio_duration(audio_file_path)
-            
             print(f"🎉 Voice message processing complete! Message ID: {message.id}")
             
             return {
@@ -163,8 +137,7 @@ class VoiceMessageService:
                 "transcribed_text": transcribed_text,
                 "translations": translations,
                 "audio_urls": audio_urls,
-                "target_language": target_language,
-                "audio_duration": audio_duration
+                "target_language": target_language
             }
             
         except Exception as e:
@@ -172,7 +145,6 @@ class VoiceMessageService:
             import traceback
             traceback.print_exc()
             raise
-    
     async def _save_and_preprocess_audio_async(self, audio_data: bytes) -> str:
         """Save and preprocess audio with optimal settings for speech recognition"""
         
@@ -225,16 +197,6 @@ class VoiceMessageService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, process_audio)
     
-    def _get_audio_duration(self, file_path: str) -> float:
-        """Get audio duration in seconds"""
-        try:
-            from pydub import AudioSegment
-            audio = AudioSegment.from_file(file_path)
-            return len(audio) / 1000.0  # Convert milliseconds to seconds
-        except Exception as e:
-            print(f"❌ Error getting audio duration: {e}")
-            return 0.0
-    
     def _apply_advanced_audio_processing(self, audio: AudioSegment) -> AudioSegment:
         """Apply advanced audio processing for optimal speech recognition"""
         
@@ -250,9 +212,15 @@ class VoiceMessageService:
         
         # Noise gate to remove very quiet background noise
         if audio.dBFS < -50:
-            # Apply simple noise gate by reducing very quiet parts
-            # This is a simplified noise gate - pydub doesn't have apply_gain_to_silent_portions
-            print("🔇 Applied noise reduction for very quiet audio")
+            # Apply noise gate
+            chunks = audio[::100]  # Sample every 100ms
+            noise_level = min(chunk.dBFS for chunk in chunks if len(chunk) > 50)
+            gate_threshold = noise_level + 10  # 10dB above noise floor
+            
+            # Simple noise gate implementation
+            silent_threshold = gate_threshold
+            audio = audio.apply_gain_to_silent_portions(silent_threshold, 0, -60)
+            print(f"🔇 Applied noise gate at {gate_threshold:.1f}dBFS")
         
         # Normalize volume
         audio = audio.normalize()
@@ -409,63 +377,6 @@ class VoiceMessageService:
             
         except Exception as e:
             print(f"Fast Whisper error: {e}")
-            return None
-    
-    async def _speech_to_text_whisper(self, audio_path: str, source_language: str) -> Optional[str]:
-        """
-        Convert speech to text using Whisper for real-time translation
-        Optimized for speed and accuracy in real-time scenarios
-        """
-        
-        if not self.whisper_model:
-            print("❌ Whisper model not available")
-            return None
-        
-        try:
-            # Whisper language mapping
-            whisper_lang_map = {
-                'en': 'english',
-                'fr': 'french', 
-                'ar': 'arabic',
-                'es': 'spanish',
-                'de': 'german',
-                'it': 'italian',
-                'pt': 'portuguese',
-                'ru': 'russian',
-                'ja': 'japanese',
-                'ko': 'korean',
-                'zh': 'chinese'
-            }
-            
-            whisper_language = whisper_lang_map.get(source_language, 'english')
-            
-            print(f"🎤 Converting speech to text using Whisper ({source_language} -> {whisper_language})")
-            
-            # Optimized Whisper settings for real-time translation
-            result = self.whisper_model.transcribe(
-                audio_path,
-                language=whisper_language,
-                task='transcribe',
-                fp16=False,  # Better accuracy
-                verbose=False,
-                temperature=0.0,  # Deterministic output
-                compression_ratio_threshold=2.4,
-                logprob_threshold=-1.0,
-                no_speech_threshold=0.6,
-                condition_on_previous_text=False
-            )
-            
-            text = result["text"].strip() if result.get("text") else ""
-            
-            if text:
-                print(f"✅ Speech recognized: '{text}'")
-                return text
-            else:
-                print("⚠️ No speech detected in audio")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Whisper speech-to-text error: {e}")
             return None
     
     def _google_speech_recognition(self, audio_path: str, target_language: str) -> Optional[str]:
@@ -634,13 +545,11 @@ class VoiceMessageService:
                 message = Message(
                     chatroom_id=chatroom_id,
                     sender_id=user_id,
-                    original_text=transcribed_text,
+                    content=transcribed_text,
+                    translated_content=translations.get(target_language, transcribed_text),
                     original_language=self._detect_language(transcribed_text),
-                    message_type=MessageType.voice,
-                    audio_urls=audio_urls,
-                    audio_duration=duration,  # Set audio duration
-                    audio_file_size=file_size,  # Set file size  
-                    translations_cache=translations
+                    target_language=target_language,
+                    message_type=MessageType.voice
                 )
                 
                 db.add(message)
@@ -649,12 +558,10 @@ class VoiceMessageService:
                 # Create audio file record
                 audio_file = AudioFile(
                     message_id=message.id,
-                    language=self._detect_language(transcribed_text),
                     file_path=audio_file_path,
-                    file_url=f"/static/uploads/voice/{os.path.basename(audio_file_path)}",
-                    file_size=file_size,
                     duration=duration,
-                    mime_type='audio/wav'
+                    file_size=file_size,
+                    format='wav'
                 )
                 
                 db.add(audio_file)
@@ -699,10 +606,11 @@ class VoiceMessageService:
                 message = Message(
                     chatroom_id=chatroom_id,
                     sender_id=user_id,
-                    original_text=placeholder_text['en'],
+                    content=placeholder_text['en'],
+                    translated_content=placeholder_text.get(target_language, placeholder_text['en']),
                     original_language='en',
-                    message_type=MessageType.voice,
-                    translations_cache=placeholder_text
+                    target_language=target_language,
+                    message_type=MessageType.voice
                 )
                 
                 db.add(message)
@@ -711,12 +619,10 @@ class VoiceMessageService:
                 # Create audio file record
                 audio_file = AudioFile(
                     message_id=message.id,
-                    language='en',
                     file_path=audio_file_path,
-                    file_url=f"/static/uploads/voice/{os.path.basename(audio_file_path)}",
-                    file_size=file_size,
                     duration=duration,
-                    mime_type='audio/wav'
+                    file_size=file_size,
+                    format='wav'
                 )
                 
                 db.add(audio_file)
@@ -747,7 +653,7 @@ class VoiceMessageService:
         try:
             audio = AudioSegment.from_file(audio_path)
             return len(audio) / 1000.0  # Convert ms to seconds
-        except Exception:
+        except:
             return 0.0
     
     def _detect_language(self, text: str) -> str:
@@ -765,228 +671,524 @@ class VoiceMessageService:
         
         # Default to English
         return 'en'
-    
-    async def translate_realtime(
-        self, 
-        audio_data: bytes, 
-        source_language: str, 
-        target_language: str, 
-        user_id: int, 
-        call_id: str
-    ) -> Dict[str, Any]:
-        """
-        Real-time voice translation for voice calls
-        1. Convert speech to text using Whisper
-        2. Translate text using local models
-        3. Convert translated text to speech
-        4. Return audio URL and texts
-        """
-        
-        if not VOICE_LIBS_AVAILABLE:
-            raise Exception("Voice processing libraries not available")
-        
-        import time
-        start_time = time.time()
-        
-        try:
-            print(f"🌐 Starting real-time translation: {source_language} → {target_language}")
-            
-            # Step 1: Speech to text
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
-                temp_audio.write(audio_data)
-                temp_audio_path = temp_audio.name
-            
-            try:
-                # Use Whisper for speech recognition
-                original_text = await self._speech_to_text_whisper(temp_audio_path, source_language)
-                print(f"🗣️ Recognized text: {original_text}")
-                
-                if not original_text or len(original_text.strip()) < 3:
-                    return {
-                        "original_text": "",
-                        "translated_text": "",
-                        "translated_audio_url": None,
-                        "processing_time": time.time() - start_time
-                    }
-                
-                # Step 2: Translate text
-                translated_text = await translation_service.translate_text_async(
-                    text=original_text,
-                    source_lang=source_language,
-                    target_lang=target_language
-                )
-                print(f"🔄 Translated text: {translated_text}")
-                
-                # Step 3: Text to speech for translated text
-                translated_audio_filename = f"realtime_{call_id}_{user_id}_{uuid.uuid4().hex[:8]}.mp3"
-                translated_audio_path = self.upload_dir / translated_audio_filename
-                
-                await self._text_to_speech_gtts(translated_text, target_language, str(translated_audio_path))
-                
-                # Generate URL for the translated audio
-                translated_audio_url = f"/static/uploads/voice/{translated_audio_filename}"
-                
-                processing_time = time.time() - start_time
-                print(f"✅ Real-time translation completed in {processing_time:.2f}s")
-                
-                return {
-                    "original_text": original_text,
-                    "translated_text": translated_text,
-                    "translated_audio_url": translated_audio_url,
-                    "processing_time": processing_time
-                }
-                
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(temp_audio_path)
-                except Exception:
-                    pass
-        
-        except Exception as e:
-            print(f"❌ Real-time translation failed: {e}")
-            raise Exception(f"Translation processing failed: {str(e)}")
 
-    async def transcribe_audio(self, audio_path: str, language: str) -> str:
-        """Transcribe audio file to text"""
-        if not VOICE_LIBS_AVAILABLE:
-            return "[Voice message]"
+# Create service instance
+VoiceService = VoiceMessageService()
+        """Convert speech to text using OpenAI Whisper"""
+        if not WHISPER_AVAILABLE or not self.whisper_model:
+            print("Whisper not available, skipping...")
+            return None
+            
+        print(f"🎙️ Starting Whisper speech recognition for: {audio_path}, language: {language}")
         
-        try:
-            # Convert audio to WAV format if needed
-            converted_path = await self._convert_audio_format(audio_path)
-            
-            if WHISPER_AVAILABLE and self.whisper_model:
-                result = await self._speech_to_text_whisper(converted_path, language)
-                if result:
-                    # Clean up converted file if it's different from original
-                    if converted_path != audio_path:
-                        try:
-                            os.unlink(converted_path)
-                        except Exception:
-                            pass
-                    return result
-            
-            # Fallback to regular speech recognition
-            result = await self._enhanced_speech_recognition_async(converted_path, language)
-            
-            # Clean up converted file if it's different from original
-            if converted_path != audio_path:
-                try:
-                    os.unlink(converted_path)
-                except Exception:
-                    pass
-            
-            return result or "[Voice message]"
-            
-        except Exception as e:
-            print(f"Error transcribing audio: {e}")
-            return "[Voice message]"
-
-    async def _convert_audio_format(self, audio_path: str) -> str:
-        """Convert audio file to WAV format for better compatibility"""
-        try:
-            # Check if file already has a supported format
-            file_ext = Path(audio_path).suffix.lower()
-            if file_ext in ['.wav', '.mp3', '.flac']:
-                return audio_path
-            
-            print(f"🔄 Converting audio from {file_ext} to WAV format")
-            
-            # Load audio with pydub
-            def convert_audio():
-                try:
-                    # Try loading as different formats
-                    if file_ext == '.webm':
-                        audio = AudioSegment.from_file(audio_path, format="webm")
-                    elif file_ext == '.ogg':
-                        audio = AudioSegment.from_ogg(audio_path)
-                    elif file_ext == '.m4a':
-                        audio = AudioSegment.from_file(audio_path, format="m4a")
-                    else:
-                        # Try auto-detect
-                        audio = AudioSegment.from_file(audio_path)
-                    
-                    # Convert to WAV with specific settings for speech recognition
-                    audio = audio.set_frame_rate(16000)  # 16kHz is good for speech
-                    audio = audio.set_channels(1)  # Mono
-                    audio = audio.set_sample_width(2)  # 16-bit
-                    
-                    # Generate new filename
-                    base_path = Path(audio_path).parent
-                    filename = Path(audio_path).stem + "_converted.wav"
-                    output_path = base_path / filename
-                    
-                    # Export as WAV
-                    audio.export(str(output_path), format="wav")
-                    return str(output_path)
-                    
-                except Exception as e:
-                    print(f"Audio conversion error: {e}")
-                    return audio_path  # Return original if conversion fails
-            
-            # Run conversion in executor to avoid blocking
-            converted_path = await asyncio.get_event_loop().run_in_executor(
-                self.executor, convert_audio
-            )
-            
-            print(f"✅ Audio converted successfully to: {converted_path}")
-            return converted_path
-            
-        except Exception as e:
-            print(f"Error converting audio format: {e}")
-            return audio_path  # Return original if conversion fails
-    
-    async def text_to_speech(self, text: str, language: str, target_dir: str = None) -> str:
-        """Convert text to speech and return file path"""
-        if not VOICE_LIBS_AVAILABLE:
+        if not os.path.exists(audio_path):
+            print(f"Audio file does not exist: {audio_path}")
             return None
         
+        try:
+            # Whisper language mapping
+            whisper_lang_map = {
+                'en': 'english',
+                'fr': 'french', 
+                'ar': 'arabic'
+            }
+            
+            whisper_language = whisper_lang_map.get(language, 'english')
+            print(f"Using Whisper language: {whisper_language}")
+            
+            # Quick audio quality check
+            try:
+                quick_check = AudioSegment.from_file(audio_path)
+                print(f"Audio check - Duration: {len(quick_check)}ms, Volume: {quick_check.dBFS:.1f} dBFS")
+                
+                if len(quick_check) < 300:
+                    print("Audio too short for Whisper recognition")
+                    return None
+            except Exception as e:
+                print(f"Error checking audio quality: {e}")
+                return None
+            
+            # Preprocess audio for better Whisper performance
+            print("Preprocessing audio for Whisper...")
+            processed_path = await self.preprocess_audio_for_whisper(audio_path)
+            
+            # Use Whisper to transcribe
+            print("Running Whisper transcription...")
+            result = self.whisper_model.transcribe(
+                processed_path, 
+                language=whisper_language,
+                fp16=False,  # Use FP32 for better compatibility
+                verbose=False
+            )
+            
+            text = result["text"].strip()
+            
+            print(f"✅ Whisper transcription successful: '{text}'")
+            
+            # Clean up processed file if different from original
+            if processed_path != audio_path and os.path.exists(processed_path):
+                os.unlink(processed_path)
+            
+            # Return text if it's meaningful (not just empty or very short)
+            if len(text) >= 2 and text.lower() not in ['', 'um', 'uh', 'mm', 'hmm']:
+                return text
+            else:
+                print(f"Whisper result too short or meaningless: '{text}'")
+                return None
+                
+        except Exception as e:
+            print(f"Whisper transcription error: {e}")
+            import traceback
+            print(f"Detailed error: {traceback.format_exc()}")
+            return None
+    
+    async def preprocess_audio_for_whisper(self, audio_path: str) -> str:
+        """Preprocess audio for optimal Whisper performance"""
+        try:
+            audio = AudioSegment.from_file(audio_path)
+            
+            # Whisper works best with 16kHz mono audio
+            audio = audio.set_frame_rate(16000).set_channels(1)
+            
+            # Normalize audio
+            audio = audio.normalize()
+            
+            # Boost quiet audio more aggressively for Whisper
+            if audio.dBFS < -30:
+                boost_db = -15 - audio.dBFS  # Target around -15 dBFS for Whisper
+                audio = audio + boost_db
+                print(f"Boosted audio for Whisper: {boost_db:.1f}dB, new level: {audio.dBFS:.1f} dBFS")
+            
+            # Create optimized file for Whisper
+            whisper_path = audio_path.replace('.wav', '_whisper.wav')
+            audio.export(whisper_path, format='wav', parameters=[
+                "-ar", "16000",  # Sample rate
+                "-ac", "1",      # Mono
+                "-acodec", "pcm_s16le"  # 16-bit PCM
+            ])
+            
+            print(f"Preprocessed audio for Whisper: {whisper_path}")
+            return whisper_path
+            
+        except Exception as e:
+            print(f"Audio preprocessing error: {e}")
+            return audio_path  # Return original if preprocessing fails
+    
+    def speech_to_text_google(self, audio_path: str, language: str) -> Optional[str]:
+        """Convert speech to text using Google Speech Recognition (fallback)"""
+        print(f"🔄 Fallback: Using Google Speech Recognition for: {audio_path}")
+        return self.speech_to_text(audio_path, language)
+
+    def speech_to_text(self, audio_path: str, language: str) -> Optional[str]:
+        """Convert speech to text using speech_recognition"""
+        if not VOICE_LIBS_AVAILABLE:
+            print("Voice libraries not available")
+            return None
+            
+        print(f"Starting speech recognition for: {audio_path}, language: {language}")
+        
+        if not os.path.exists(audio_path):
+            print(f"Audio file does not exist: {audio_path}")
+            return None
+        
+        # Quick audio quality check
+        try:
+            quick_check = AudioSegment.from_file(audio_path)
+            print(f"Initial audio check - Duration: {len(quick_check)}ms, Volume: {quick_check.dBFS:.1f} dBFS")
+            
+            if len(quick_check) < 300:
+                print("Audio too short for recognition")
+                return None
+                
+            if quick_check.dBFS < -70:
+                print("Audio extremely quiet - may not contain speech")
+                # Continue anyway but warn
+                
+        except Exception as e:
+            print(f"Error checking audio quality: {e}")
+            return None
+            
+        r = sr.Recognizer()
+        
+        try:
+            print("Converting audio file to WAV format...")
+            # Convert to WAV format for speech recognition
+            audio = AudioSegment.from_file(audio_path)
+            print(f"Audio duration: {len(audio)}ms, channels: {audio.channels}, sample rate: {audio.frame_rate}")
+            
+            # Audio preprocessing for better recognition
+            # Normalize audio levels first
+            audio = audio.normalize()
+            print(f"After normalization: {audio.dBFS:.1f} dBFS")
+            
+            # Convert to mono if stereo
+            if audio.channels > 1:
+                audio = audio.set_channels(1)
+                print("Converted to mono audio")
+            
+            # Adjust sample rate to 16kHz (optimal for speech recognition)
+            original_rate = audio.frame_rate
+            if audio.frame_rate != 16000:
+                audio = audio.set_frame_rate(16000)
+                print(f"Adjusted sample rate to 16000Hz from {original_rate}Hz")
+            
+            # Check if audio is too short (less than 0.5 seconds)
+            if len(audio) < 500:
+                print(f"Audio too short: {len(audio)}ms")
+                return None
+            
+            # Boost very quiet audio more aggressively
+            if audio.dBFS < -35:
+                # Calculate boost needed to get to around -20 dBFS
+                boost_db = -20 - audio.dBFS
+                audio = audio + boost_db
+                print(f"Boosted quiet audio by {boost_db:.1f}dB, new level: {audio.dBFS:.1f} dBFS")
+            elif audio.dBFS < -25:
+                # Modest boost for moderately quiet audio
+                boost_db = -20 - audio.dBFS
+                audio = audio + boost_db
+                print(f"Boosted audio by {boost_db:.1f}dB, new level: {audio.dBFS:.1f} dBFS")
+            
+            # Apply compression to even out volume levels
+            # This helps with varying speech volumes
+            compressed = audio.compress_dynamic_range(threshold=-20.0, ratio=4.0, attack=5.0, release=50.0)
+            if compressed.dBFS > audio.dBFS - 3:  # Only use if it doesn't make it much quieter
+                audio = compressed
+                print(f"Applied dynamic compression, level: {audio.dBFS:.1f} dBFS")
+            
+            wav_path = audio_path.replace('.webm', '.wav').replace('.mp3', '.wav').replace('.m4a', '.wav')
+            audio.export(wav_path, format='wav', parameters=["-ar", "16000", "-ac", "1"])
+            print(f"Exported preprocessed WAV to: {wav_path}")
+            
+            # Perform speech recognition with improved settings
+            print("Performing speech recognition...")
+            with sr.AudioFile(wav_path) as source:
+                # Adjust for ambient noise with longer duration
+                r.adjust_for_ambient_noise(source, duration=1.0)
+                
+                # Increase energy threshold for better noise handling
+                r.energy_threshold = 300
+                r.dynamic_energy_threshold = True
+                
+                # Record the entire audio file
+                audio_data = r.record(source)
+            
+            # Language mapping for Google Speech Recognition (only English, French, Arabic)
+            lang_map = {
+                'en': 'en-US',
+                'fr': 'fr-FR', 
+                'ar': 'ar-SA'
+            }
+            
+            recognition_lang = lang_map.get(language, 'en-US')
+            print(f"Using recognition language: {recognition_lang}")
+            
+            # Try multiple recognition attempts with different settings
+            text = None
+            attempts = [
+                # Attempt 1: Standard recognition
+                {"show_all": False},
+                # Attempt 2: Get all results and pick best
+                {"show_all": True},
+                # Attempt 3: Try with default language if specific language fails
+                {"language": "en-US", "show_all": False} if recognition_lang != "en-US" else None
+            ]
+            
+            for i, attempt_params in enumerate(attempts):
+                if attempt_params is None:
+                    continue
+                    
+                try:
+                    print(f"Recognition attempt {i+1} with params: {attempt_params}")
+                    
+                    if attempt_params.get("show_all"):
+                        # Get all possible transcriptions
+                        results = r.recognize_google(audio_data, language=recognition_lang, show_all=True)
+                        if results and len(results) > 0:
+                            # Pick the most confident result
+                            text = results[0]["transcript"]
+                            confidence = results[0].get("confidence", 0)
+                            print(f"Got transcription with confidence {confidence}: {text}")
+                            break
+                    else:
+                        # Standard recognition
+                        lang_to_use = attempt_params.get("language", recognition_lang)
+                        text = r.recognize_google(audio_data, language=lang_to_use)
+                        print(f"Recognition attempt {i+1} successful: {text}")
+                        break
+                        
+                except sr.UnknownValueError:
+                    print(f"Recognition attempt {i+1} failed: Could not understand audio")
+                    continue
+                except sr.RequestError as e:
+                    print(f"Recognition attempt {i+1} failed: Request error: {e}")
+                    continue
+                except Exception as e:
+                    print(f"Recognition attempt {i+1} failed: {e}")
+                    continue
+            
+            if not text:
+                print("All recognition attempts failed")
+                
+            print(f"Final speech recognition result: {text}")
+            
+            # Clean up WAV file (but keep for debugging if recognition failed)
+            if os.path.exists(wav_path):
+                if text:
+                    os.unlink(wav_path)
+                    print("Cleaned up WAV file")
+                else:
+                    print(f"Recognition failed. WAV file kept for debugging: {wav_path}")
+                    # Optionally, you can move it to a debug folder
+            
+            return text
+            
+        except sr.UnknownValueError:
+            print("Speech recognition could not understand audio (final attempt)")
+            return None
+        except sr.RequestError as e:
+            print(f"Could not request results from speech recognition service; {e}")
+            return None
+        except Exception as e:
+            print(f"Speech recognition error: {e}")
+            # Print more detailed error info
+            import traceback
+            print(f"Detailed error: {traceback.format_exc()}")
+            return None
+    
+    async def translate_text(self, text: str, source_lang: str) -> Dict[str, str]:
+        """Translate text to supported languages (English, French, Arabic only)"""
+        target_languages = ['en', 'fr', 'ar']
+        translations = {}
+        
+        for target_lang in target_languages:
+            if target_lang != source_lang:
+                try:
+                    # Use your existing translation service (sync version)
+                    translated = translation_service.translate_text(text, source_lang, target_lang)
+                    translations[target_lang] = translated
+                except Exception as e:
+                    print(f"Translation error for {target_lang}: {e}")
+                    translations[target_lang] = text  # Fallback to original
+        
+        return translations
+    
+    async def generate_voice_files(self, original_text: str, translations: Dict[str, str], original_lang: str) -> Dict[str, str]:
+        """Generate TTS audio files for original and translated text"""
+        audio_urls = {}
+        
+        if not VOICE_LIBS_AVAILABLE:
+            return audio_urls
+        
+        try:
+            # Generate for original language
+            audio_urls[original_lang] = await self.text_to_speech(original_text, original_lang)
+            
+            # Generate for translations
+            for lang, text in translations.items():
+                if text and lang != original_lang:
+                    audio_urls[lang] = await self.text_to_speech(text, lang)
+                    
+        except Exception as e:
+            print(f"TTS generation error: {e}")
+        
+        return audio_urls
+    
+    async def create_voice_only_message(
+        self, 
+        audio_file_path: str, 
+        language: str, 
+        sender_id: int, 
+        recipient_id: int,
+        db: Session
+    ) -> Dict:
+        """Create a voice message when transcription fails"""
+        
+        # Create a placeholder text based on language
+        placeholder_texts = {
+            'en': "[Voice message - transcription unavailable]",
+            'fr': "[Message vocal - transcription indisponible]", 
+            'ar': "[رسالة صوتية - النسخ غير متاح]"
+        }
+        
+        placeholder_text = placeholder_texts.get(language, placeholder_texts['en'])
+        
+        # Save the original audio file to uploads directory
+        audio_url = await self.save_original_audio(audio_file_path, language)
+        
+        # Get audio metadata
+        duration = self.get_audio_duration(audio_file_path)
+        file_size = os.path.getsize(audio_file_path)
+        
+        # Get or create chatroom
+        chatroom = self.get_or_create_direct_chatroom(sender_id, recipient_id, db)
+        
+        # Create message with placeholder text
+        message = Message(
+            chatroom_id=chatroom.id,
+            sender_id=sender_id,
+            original_text=placeholder_text,
+            original_language=language,
+            message_type=MessageType.voice,
+            original_audio_path=audio_file_path,
+            audio_urls={language: audio_url},  # Only original language
+            audio_duration=duration,
+            audio_file_size=file_size,
+            translations_cache={}  # No translations available
+        )
+        
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        
+        # Create audio file record
+        audio_file = AudioFile(
+            message_id=message.id,
+            language=language,
+            file_path=audio_url,
+            file_url=audio_url,
+            file_size=file_size,
+            duration=duration,
+            mime_type="audio/wav"
+        )
+        
+        db.add(audio_file)
+        db.commit()
+        
+        return {
+            "message": message,
+            "transcribed_text": placeholder_text,
+            "translations": {},
+            "audio_urls": {language: audio_url},
+            "duration": duration
+        }
+    
+    async def save_original_audio(self, audio_file_path: str, language: str) -> str:
+        """Save original audio file to uploads directory"""
         try:
             # Generate unique filename
-            file_id = str(uuid.uuid4())
+            filename = f"voice_{uuid.uuid4().hex}_{language}.wav"
+            save_path = self.upload_dir / filename
             
-            # Use target directory if provided, otherwise use default
-            if target_dir:
-                # Ensure target directory exists
-                target_path = Path(target_dir)
-                target_path.mkdir(parents=True, exist_ok=True)
-                output_path = target_path / f"{file_id}_{language}.mp3"
-            else:
-                output_path = self.upload_dir / f"{file_id}_{language}.mp3"
+            # Copy the processed audio file
+            import shutil
+            shutil.copy2(audio_file_path, save_path)
             
-            # Use gTTS for text-to-speech
-            def generate_audio():
-                # Map language codes for gTTS
-                lang_map = {
-                    'en': 'en',
-                    'fr': 'fr', 
-                    'ar': 'ar'
-                }
-                
-                gtts_lang = lang_map.get(language, 'en')
-                tts = gTTS(text=text, lang=gtts_lang, slow=False)
-                tts.save(str(output_path))
-                return str(output_path)
-            
-            # Run in executor to avoid blocking
-            result = await asyncio.get_event_loop().run_in_executor(
-                self.executor, generate_audio
-            )
-            
-            return result
+            return f"/static/uploads/voice/{filename}"
             
         except Exception as e:
-            print(f"Error generating speech: {e}")
+            print(f"Error saving original audio: {e}")
+            return ""
+    
+    async def text_to_speech(self, text: str, language: str) -> Optional[str]:
+        """Convert text to speech using gTTS (English, French, Arabic only)"""
+        if not VOICE_LIBS_AVAILABLE:
             return None
+            
+        try:
+            # Language mapping for gTTS (only supported languages)
+            lang_map = {
+                'en': 'en',
+                'fr': 'fr',
+                'ar': 'ar'
+            }
+            
+            tts_lang = lang_map.get(language, 'en')
+            
+            # Create TTS object
+            tts = gTTS(text=text, lang=tts_lang, slow=False)
+            
+            # Generate unique filename
+            filename = f"tts_{uuid.uuid4().hex}_{language}.mp3"
+            file_path = self.upload_dir / filename
+            
+            # Save TTS audio
+            tts.save(str(file_path))
+            
+            # Return URL for accessing the file
+            return f"/static/uploads/voice/{filename}"
+            
+        except Exception as e:
+            print(f"TTS error for {language}: {e}")
+            return None
+    
+    def get_audio_duration(self, audio_path: str) -> float:
+        """Get audio duration in seconds"""
+        if not VOICE_LIBS_AVAILABLE:
+            return 0.0
+            
+        try:
+            audio = AudioSegment.from_file(audio_path)
+            return len(audio) / 1000.0  # Convert ms to seconds
+        except Exception as e:
+            print(f"Error getting audio duration: {e}")
+            return 0.0
+    
+    def get_or_create_direct_chatroom(self, user1_id: int, user2_id: int, db: Session):
+        """Get or create direct chatroom between two users"""
+        
+        # Create unique chatroom name for direct messages
+        direct_key = f"direct:{min(user1_id, user2_id)}:{max(user1_id, user2_id)}"
+        
+        # Check if chatroom exists
+        chatroom = db.query(Chatroom).filter(
+            Chatroom.chatroom_name == direct_key,
+            Chatroom.is_group_chat.is_(False)
+        ).first()
+        
+        if chatroom:
+            return chatroom
+        
+        # Create new chatroom
+        chatroom = Chatroom(
+            chatroom_name=direct_key,
+            is_group_chat=False
+        )
+        db.add(chatroom)
+        db.flush()  # Get ID without committing
+        
+        # Add members
+        member1 = ChatroomMember(chatroom_id=chatroom.id, user_id=user1_id)
+        member2 = ChatroomMember(chatroom_id=chatroom.id, user_id=user2_id)
+        
+        db.add(member1)
+        db.add(member2)
+        db.commit()
+        db.refresh(chatroom)
+        
+        return chatroom
+    
+    async def create_audio_file_records(self, message: Message, audio_urls: Dict[str, str], db: Session):
+        """Create detailed AudioFile records for each generated audio file"""
+        
+        for language, url in audio_urls.items():
+            if url:
+                # Extract filename from URL
+                filename = url.split("/")[-1]
+                file_path = self.upload_dir / filename
+                
+                # Get file details
+                file_size = 0
+                duration = 0.0
+                
+                if file_path.exists():
+                    file_size = os.path.getsize(file_path)
+                    duration = self.get_audio_duration(str(file_path))
+                
+                # Create AudioFile record
+                audio_file = AudioFile(
+                    message_id=message.id,
+                    language=language,
+                    file_path=str(file_path),
+                    file_url=url,
+                    file_size=file_size,
+                    duration=duration,
+                    mime_type="audio/mp3"
+                )
+                
+                db.add(audio_file)
+        
+        db.commit()
 
-# Export the class for import
-VoiceService = VoiceMessageService
-
-# Create singleton global instance (guaranteed to be unique)
+# Create service instance
 voice_service = VoiceMessageService()
-
-# Convenience function to get the singleton instance
-def get_voice_service() -> VoiceMessageService:
-    """Get the singleton instance of VoiceMessageService"""
-    return VoiceMessageService()
