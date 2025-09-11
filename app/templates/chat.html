@@ -695,7 +695,7 @@
         <strong class="me-1">${label}:</strong>
         <span class="language-badge">${originalLang.toUpperCase()}</span>
         <div class="voice-message ${mine ? 'mine' : ''} mt-2">
-          <button class="play-voice-btn btn ${mine ? 'btn-light' : 'btn-primary'} btn-sm" data-audio-url="${audioUrl}">
+          <button class="play-voice-btn btn ${mine ? 'btn-light' : 'btn-primary'} btn-sm" data-audio-url="${audioUrl}" data-message-id="${timestamp || Date.now()}">
             <i class="fas fa-play"></i>
           </button>
           <div class="audio-waveform ${mine ? 'mine' : ''}">
@@ -762,46 +762,149 @@
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
-  // Play voice message
+  // Audio management
+  const audioInstances = new Map();
+  let currentlyPlaying = null;
+
+  // Play voice message with proper audio management
   function playVoiceMessage(audioUrl, playBtn) {
     if (!audioUrl) {
       console.error('No audio URL provided');
       return;
     }
     
-    const audio = new Audio(audioUrl);
+    const messageId = playBtn.dataset.messageId || audioUrl;
     const icon = playBtn.querySelector('i');
     
-    // Update button to show playing state
-    icon.className = 'fas fa-pause';
+    // Stop any currently playing audio
+    if (currentlyPlaying && currentlyPlaying !== messageId) {
+      stopAudio(currentlyPlaying);
+    }
+    
+    // Get or create audio instance
+    let audio = audioInstances.get(messageId);
+    
+    if (!audio) {
+      audio = new Audio();
+      audioInstances.set(messageId, audio);
+      
+      // Set up event listeners once
+      audio.addEventListener('ended', () => {
+        resetPlayButton(playBtn);
+        currentlyPlaying = null;
+      });
+      
+      audio.addEventListener('error', (e) => {
+        console.error('Error loading audio file:', e);
+        resetPlayButton(playBtn);
+        currentlyPlaying = null;
+      });
+      
+      audio.addEventListener('loadstart', () => {
+        console.log('Audio loading started');
+      });
+      
+      audio.addEventListener('canplay', () => {
+        console.log('Audio can start playing');
+      });
+    }
+    
+    // Check if this audio is currently playing
+    if (currentlyPlaying === messageId && !audio.paused) {
+      // Pause current audio
+      audio.pause();
+      resetPlayButton(playBtn);
+      currentlyPlaying = null;
+      return;
+    }
+    
+    // Reset audio to beginning and load fresh
+    audio.currentTime = 0;
+    audio.src = audioUrl + '?t=' + Date.now(); // Cache busting
+    audio.load();
+    
+    // Update button to show loading state
+    icon.className = 'fas fa-spinner fa-spin';
     playBtn.disabled = true;
     
-    audio.play().catch(error => {
-      console.error('Error playing audio:', error);
-      icon.className = 'fas fa-play';
-      playBtn.disabled = false;
-    });
+    // Play audio
+    const playPromise = audio.play();
     
-    audio.onended = function() {
-      icon.className = 'fas fa-play';
-      playBtn.disabled = false;
-    };
-    
-    audio.onerror = function() {
-      icon.className = 'fas fa-play';
-      playBtn.disabled = false;
-      console.error('Error loading audio file');
-    };
-    
-    // Allow pausing
-    playBtn.onclick = function() {
-      if (!audio.paused) {
-        audio.pause();
-        icon.className = 'fas fa-play';
-        playBtn.disabled = false;
-      }
-    };
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          // Audio started playing successfully
+          icon.className = 'fas fa-pause';
+          playBtn.disabled = false;
+          currentlyPlaying = messageId;
+        })
+        .catch(error => {
+          console.error('Error playing audio:', error);
+          resetPlayButton(playBtn);
+          currentlyPlaying = null;
+          
+          // Try to unlock audio context and retry
+          unlockAudioContext().then(() => {
+            // Retry after a short delay
+            setTimeout(() => {
+              audio.play().catch(e => {
+                console.error('Retry failed:', e);
+              });
+            }, 100);
+          });
+        });
+    }
   }
+  
+  function resetPlayButton(playBtn) {
+    const icon = playBtn.querySelector('i');
+    icon.className = 'fas fa-play';
+    playBtn.disabled = false;
+  }
+  
+  function stopAudio(messageId) {
+    const audio = audioInstances.get(messageId);
+    if (audio && !audio.paused) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  }
+  
+  // Audio context unlocking for better browser compatibility
+  let audioContextUnlocked = false;
+  
+  function unlockAudioContext() {
+    return new Promise((resolve) => {
+      if (audioContextUnlocked) {
+        resolve();
+        return;
+      }
+      
+      // Create a silent audio to unlock the context
+      const audio = new Audio();
+      audio.volume = 0;
+      audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+      
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            audio.pause();
+            audioContextUnlocked = true;
+            resolve();
+          })
+          .catch(() => {
+            resolve(); // Resolve anyway
+          });
+      } else {
+        resolve();
+      }
+    });
+  }
+  
+  // Unlock audio on first user interaction
+  document.addEventListener('click', unlockAudioContext, { once: true });
+  document.addEventListener('touchstart', unlockAudioContext, { once: true });
 
   function showTypingIndicator() {
     // Remove existing typing indicator
@@ -1759,6 +1862,16 @@ document.addEventListener('DOMContentLoaded', function() {
     chatContainer.setAttribute('data-other-user-id', '{{ remote_user.id }}');
     chatContainer.setAttribute('data-user-language', '{{ current_user.preferred_language or "en" }}');
   }
+  
+  // Cleanup audio instances when page is unloaded
+  window.addEventListener('beforeunload', () => {
+    audioInstances.forEach((audio, messageId) => {
+      audio.pause();
+      audio.src = '';
+      audio.load();
+    });
+    audioInstances.clear();
+  });
 });
 </script>
 {% endblock %}

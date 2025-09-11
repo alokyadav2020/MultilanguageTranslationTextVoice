@@ -49,7 +49,7 @@ class VoiceMessageService:
             try:
                 print("🔄 Loading Whisper model...")
                 # Use 'small' model for better accuracy than 'base'
-                self.whisper_model = whisper.load_model("small", device=self.whisper_device)
+                self.whisper_model = whisper.load_model("turbo", device=self.whisper_device)
                 print(f"✅ Whisper model loaded successfully on {self.whisper_device}")
             except Exception as e:
                 print(f"❌ Failed to load Whisper model: {e}")
