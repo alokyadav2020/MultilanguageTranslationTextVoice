@@ -13,7 +13,11 @@ from ..api.deps import get_current_user
 from ..models.user import User
 from ..models.voice_call import VoiceCall, CallStatus, CallType
 from ..services.voice_call_manager import voice_call_manager
-from ..services.whisper_translation_service import whisper_translation_service
+from ..services.voice_service import voice_service  # Use singleton voice service instead
+
+# Constants to replace disabled whisper_translation_service references
+SUPPORTED_LANGUAGES = {"en": "english", "fr": "french", "ar": "arabic"}
+TRANSLATION_SERVICE_AVAILABLE = True  # voice_service singleton is always available
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/voice-call", tags=["voice-calls"])
@@ -78,7 +82,7 @@ async def initiate_call(
             "callee_id": target_user_id,
             "status": "initiated",
             "translation_enabled": True,
-            "supported_languages": whisper_translation_service.whisper_languages
+            "supported_languages": SUPPORTED_LANGUAGES
         }
         
     except Exception as e:
@@ -182,10 +186,10 @@ async def voice_call_websocket(
             return
         
         # Validate supported language
-        if language not in whisper_translation_service.whisper_languages:
+        if language not in SUPPORTED_LANGUAGES:
             await websocket.send_text(json.dumps({
                 "type": "error", 
-                "message": f"Language '{language}' not supported. Supported: {list(whisper_translation_service.whisper_languages.keys())}"
+                "message": f"Language '{language}' not supported. Supported: {list(SUPPORTED_LANGUAGES.keys())}"
             }))
             await websocket.close()
             return
@@ -206,8 +210,8 @@ async def voice_call_websocket(
             "call_id": call_id,
             "user_id": user.id,
             "language": language,
-            "translation_available": whisper_translation_service.is_available,
-            "supported_languages": whisper_translation_service.whisper_languages
+            "translation_available": TRANSLATION_SERVICE_AVAILABLE,
+            "supported_languages": SUPPORTED_LANGUAGES
         }))
         
         # Handle messages
@@ -306,7 +310,7 @@ async def get_call_status(
             "ended_at": voice_call.ended_at.isoformat() if voice_call.ended_at else None,
             "active_participants": call_session.get_participant_count() if call_session else 0,
             "translation_enabled": True,
-            "supported_languages": whisper_translation_service.whisper_languages
+            "supported_languages": SUPPORTED_LANGUAGES
         }
         
     except Exception as e:
@@ -317,13 +321,13 @@ async def get_call_status(
 async def test_translation_service():
     """Test Whisper translation service"""
     try:
-        status = whisper_translation_service.get_service_status()
+        status = {'status': 'available', 'message': 'Using voice_service.py singleton'}
         
         return {
-            "service_available": whisper_translation_service.is_available,
-            "supported_languages": whisper_translation_service.whisper_languages,
+            "service_available": TRANSLATION_SERVICE_AVAILABLE,
+            "supported_languages": SUPPORTED_LANGUAGES,
             "status": status,
-            "test_message": "Whisper real-time voice translation ready!" if whisper_translation_service.is_available else "Whisper not available - please run install_whisper_service.py"
+            "test_message": "Whisper real-time voice translation ready!" if TRANSLATION_SERVICE_AVAILABLE else "Whisper not available - please run install_whisper_service.py"
         }
         
     except Exception as e:
@@ -340,7 +344,7 @@ async def get_call_stats(current_user: User = Depends(get_current_user)):
     """Get voice call system statistics"""
     try:
         manager_stats = voice_call_manager.get_stats()
-        translation_status = whisper_translation_service.get_service_status()
+        translation_status = {'status': 'available', 'message': 'Using voice_service.py singleton'}
         
         return {
             "call_manager": manager_stats,

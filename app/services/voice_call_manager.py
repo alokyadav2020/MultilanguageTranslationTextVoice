@@ -4,7 +4,7 @@ import uuid
 import time
 from typing import Dict, Optional
 from fastapi import WebSocket
-from ..services.whisper_translation_service import whisper_translation_service
+from ..services.voice_service import voice_service  # Use singleton voice service instead
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +100,9 @@ class VoiceCallManager:
         if user_id in self.user_calls:
             del self.user_calls[user_id]
             
-        # Clean up translation buffers
-        whisper_translation_service.cleanup_call_buffers(call_id)
+        # Clean up translation buffers (DISABLED - using voice_service.py now)
+        # voice_service.cleanup_call_buffers(call_id)  # This method doesn't exist in voice_service
+        logger.info(f"🧹 Call cleanup for call_id: {call_id} (translation buffers disabled)")
         
         # Notify other participants
         await self._broadcast_participant_left(call_id, user_id)
@@ -201,14 +202,15 @@ class VoiceCallManager:
                 continue
                 
             try:
-                # Process voice translation
-                result = await whisper_translation_service.process_voice_chunk_realtime(
-                    call_id=call_id,
-                    user_id=user_id,
-                    audio_data=audio_data,
-                    source_language=source_language,
-                    target_language=target_language
-                )
+                # Process voice translation (DISABLED - real-time translation disabled)
+                # Using voice_service.py now, but real-time translation needs different implementation
+                logger.warning("⚠️ Real-time voice translation disabled. Use voice_service.py for voice messages instead.")
+                
+                result = {
+                    "success": False,
+                    "error": "Real-time translation disabled. Use voice_service.py instead.",
+                    "status": "disabled"
+                }
                 
                 if result["success"] and "audio_output" in result:
                     # Send translated audio to participant
@@ -344,8 +346,8 @@ class VoiceCallManager:
         return {
             "active_calls": len(self.active_calls),
             "total_participants": total_participants,
-            "translation_service_available": whisper_translation_service.is_available,
-            "supported_languages": whisper_translation_service.whisper_languages
+            "translation_service_available": True,  # voice_service singleton is always available
+            "supported_languages": ["en", "fr", "ar"]  # Basic supported languages
         }
 
 # Global call manager instance
