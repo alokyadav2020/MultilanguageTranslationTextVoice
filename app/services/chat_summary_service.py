@@ -184,13 +184,16 @@ class ChatSummaryService:
             pipeline_kwargs = {
                 "model": self.model,
                 "tokenizer": self.tokenizer,
-                "device": 0 if self.device == "cuda" else -1,
-                "torch_dtype": torch.float16 if self.device != "cpu" else torch.float32,
                 "max_length": 150,
                 "min_length": 30,
                 "do_sample": False,
                 "batch_size": 4 if self.device == "cuda" else 1,  # Larger batch on GPU
             }
+            
+            # Only set device if not using device_map (Accelerate handles device placement)
+            if "device_map" not in model_kwargs:
+                pipeline_kwargs["device"] = 0 if self.device == "cuda" else -1
+                pipeline_kwargs["torch_dtype"] = torch.float16 if self.device != "cpu" else torch.float32
             
             self.summarizer = pipeline("summarization", **pipeline_kwargs)
             
