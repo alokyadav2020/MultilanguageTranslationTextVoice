@@ -23,6 +23,7 @@ from .api import auth, users, chat_ws, translation, voice_chat, voice_call, grou
 from .api import enhanced_voice_call  # Import enhanced voice call API
 from .api import chat_summary  # Import chat summary API
 from . import models
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,11 @@ app.add_middleware(
     path="/",
     max_age=60*60*24*7,
 )
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+BASE_DIR = Path(__file__).resolve().parent.parent  # Points to project root
+STATIC_DIR = BASE_DIR / "app" / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+# app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 app.add_middleware(
